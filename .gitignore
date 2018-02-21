@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+*.db
+
+# Non Used
+*.txt
+*.log
+*.dmp
+*.pdb
+*.tlog
