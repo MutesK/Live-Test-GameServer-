@@ -5,7 +5,11 @@
 
 ## 서버 구성도
 
-## 서버 구동화면
+## 서버 구동화면(C++ Native Server Using IOCP)
+
+> 각 서버에 쓴 라이브러리는 제가 만든 라이브러리를 사용하였습니다.
+
+[네트워크 라이브러리](https://github.com/MutesK/Mutes-Network-Libs)
 
 + 마스터서버
 
