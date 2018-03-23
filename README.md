@@ -5,6 +5,8 @@
 
 ## 서버 구성도
 
+![서버 구성도](https://github.com/MutesK/Live-Test-GameServer-/blob/master/%EA%B5%AC%EC%84%B1%EB%8F%84.PNG?raw=true)
+
 ## 서버 구동화면(C++ Native Server Using IOCP)
 
 > 각 서버에 쓴 라이브러리는 제가 만든 라이브러리를 사용하였습니다.
@@ -197,7 +199,7 @@ CREATE TABLE `server` (
 
 ### 게임 컨텐츠 DB
 
-> 해당 DB의 스키마의 이름은 DBConnect 테이블의 dbname 칼럼에 따라 설정해줘야 한다.
+> 해당 DB의 스키마의 이름은 DBConnect 테이블의 dbname 칼럼에 따라 설정해줘야 합니다.
 
 ```sql
 DROP TABLE IF EXISTS `account`;
