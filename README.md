@@ -3,6 +3,25 @@
 
 [TOC]
 
+## 서버 구성도
+
+## 서버 구동화면
+
++ 마스터서버
+
+![마스터서버](https://github.com/MutesK/Live-Test-GameServer-NOT-COMPLETE-/blob/master/%EB%A7%88%EC%8A%A4%ED%84%B0%EC%84%9C%EB%B2%84.PNG?raw=true)
+
++ 매치서버
+
+![매치서버](https://github.com/MutesK/Live-Test-GameServer-NOT-COMPLETE-/blob/master/%EB%A7%A4%EC%B9%98%EC%84%9C%EB%B2%84.PNG?raw=true)
+
++ 배틀서버
+
+![배틀서버](https://github.com/MutesK/Live-Test-GameServer-NOT-COMPLETE-/blob/master/%EB%B0%B0%ED%8B%80%EC%84%9C%EB%B2%84.PNG?raw=true)
+
++ 채팅서버
+
+![채팅서버](https://github.com/MutesK/Live-Test-GameServer-NOT-COMPLETE-/blob/master/%EC%B1%84%ED%8C%85%EC%84%9C%EB%B2%84.PNG?raw=true)
 
 
 ## DB
