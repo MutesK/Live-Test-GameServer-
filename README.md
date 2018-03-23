@@ -26,7 +26,7 @@
 
 ## DB
 
-###Shading DB Table
+### Shading DB Table
 
 1. Matchmaking Status
 
@@ -72,8 +72,6 @@ CREATE TABLE `server` (
    ) ENGINE=InnoDB AUTO_INCREMENT=57024 DEFAULT CHARSET=utf8;
    ```
 
-   ​
-
 3. Shdb_info
 
    1. available table
@@ -118,7 +116,7 @@ CREATE TABLE `server` (
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
       ```
 
-   ### Log DB 
+### Log DB 
 
    > 네이티브 C++ 서버에서 생기는 로그는 자체 텍스트로 로그를 남기고 있습니다.
    >
@@ -220,8 +218,6 @@ CREATE TABLE `contents` (
   PRIMARY KEY (`accountno`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 ```
-
-
 
 ------
 
