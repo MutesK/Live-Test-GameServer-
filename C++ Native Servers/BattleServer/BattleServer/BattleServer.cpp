@@ -5,7 +5,8 @@
 #include "ChatLanServer.h"
 #include "Engine/Parser.h"
 #include "Engine/HttpPost.h"
-
+#include "MornitoringAgent.h"
+#include "Morntoring.h"
 
 
 CBattleServer::CBattleServer(int MaxSession)
@@ -25,6 +26,8 @@ CBattleServer::CBattleServer(int MaxSession)
 		SetSessionArray(i, &Players[i]);
 		Players[i].SetBattleServer(this);
 	}
+
+	
 }
 
 
@@ -34,12 +37,14 @@ CBattleServer::~CBattleServer()
 
 bool CBattleServer::Start(WCHAR *szServerConfig, bool bNagle)
 {
-	CParser *pParser = new CParser(szServerConfig);
-
+	//CParser *pParser = new CParser(szServerConfig);
+	unique_ptr<CParser> pParser{ new CParser(szServerConfig) };
 	int BattlePort;
 	int PacketCode, PacketKey1, PacketKey2;
 	int WorkerThread;
+	int ServerNo;
 
+	pParser->GetValue(L"SERVER_NO", (int *)&ServerNo, L"NETWORK");
 	pParser->GetValue(L"BIND_IP", BattleServerIP, L"NETWORK");
 	pParser->GetValue(L"BIND_PORT", &BattlePort, L"NETWORK");
 
@@ -101,8 +106,26 @@ bool CBattleServer::Start(WCHAR *szServerConfig, bool bNagle)
 	pParser->GetValue(L"SHDB_API", shAPIURL, L"NETWORK");
 	HTTPURLParse();
 
-	for(int i=0; i<10; i++)
+	for(int i=0; i<5; i++)
 		hLoginThread[i] = (HANDLE)_beginthreadex(nullptr, 0, LoginThread, this, 0, nullptr);
+
+	array<BYTE, 32> LoginSessionKey;
+	WCHAR _LoginKey[32];
+
+	pParser->GetValue(L"LOGIN_TOKEN", _LoginKey, L"SYSTEM");
+	UTF16toUTF8(reinterpret_cast<char *>(LoginSessionKey.data()), _LoginKey, 32);
+
+	array<WCHAR, 16> MornitorIP;
+	int MorintorPort;
+
+	pParser->GetValue(L"MORNITOR_IP", &MornitorIP[0], L"NETWORK");
+	pParser->GetValue(L"MORNITOR_PORT", &MorintorPort, L"NETWORK");
+
+	MonitorSenderAgent = make_shared<CMornitoringAgent>(*this, ServerNo, LoginSessionKey);
+	if (!MonitorSenderAgent->Connect(MornitorIP, MorintorPort, true))
+		return false;
+
+	pMonitorAgent = make_shared<CMornitoring>();
 }
 
 void CBattleServer::Stop(void)
@@ -117,6 +140,7 @@ void CBattleServer::Stop(void)
 
 void CBattleServer::Monitoring()
 {
+	
 	wprintf(L"====================================================\n");
 	wprintf(L"\t\t Monitoring \t\n");
 	wprintf(L"====================================================\n");
@@ -140,11 +164,14 @@ void CBattleServer::Monitoring()
 	wprintf(L"================== Room User Status ===============\n");
 	RoomStatusMonitoring();
 	wprintf(L"====================================================\n");
+	MonitoringSender();
 	wcout << L"Packet Pool : " << CPacketBuffer::PacketPool.GetChunkSize() << L"\n";
-	wcout << L"Packet Pool Use: " << CPacketBuffer::GetAllocCount() << L"\n\n";
+	wcout << L"Packet Pool Use: " << CPacketBuffer::PacketPool.GetAllocCount() << L"\n\n";
 	_ChatServer.pChatServer->Monitoring();
 	_MasterServer.pMasterServer->Monitoring();
 	wprintf(L"====================================================\n");
+
+
 
 	_Monitor_Counter_AuthUpdate = _Monitor_Counter_GameUpdate = _Monitor_Counter_Accept
 		= _Monitor_Counter_PacketProc = _Monitor_Counter_PacketSend = 0;
@@ -236,7 +263,7 @@ void CBattleServer::HTTPURLParse()
 
 void CBattleServer::OnError(int iErrorCode, WCHAR *szError)
 {
-
+	SYSLOG(L"ERROR", LOG_ERROR, szError);
 }
 
 void	CBattleServer::LoginProcessReq(CPlayer *pPlayer)
@@ -258,10 +285,15 @@ UINT CBattleServer::LoginWork()
 	{
 		while (LoginQueue.Dequeue(&pPlayer))
 		{
-			ReqLogin(pPlayer);
+			if(pPlayer != nullptr)
+				ReqLogin(pPlayer);
+
+			pPlayer = nullptr;
 
 			Sleep(0);
 		}
+
+		pPlayer = nullptr;
 
 		Sleep(20);
 	}
@@ -297,6 +329,8 @@ void	CBattleServer::SendPacketAllInRoom(CPacketBuffer *pBuffer, CPlayer *pExcept
 		pBuffer->AddRefCount();
 		if (!pSender->SendPacket(pBuffer))
 			pBuffer->Free();
+
+		pSender->LastTick = CUpdateTime::GetTickCount();
 	}
 	Rooms[pExceptPlayer->RoomNo].ReadUnLock();
 
@@ -315,8 +349,49 @@ void	CBattleServer::SendPacketAllInRoom(CPacketBuffer *pBuffer, CRoom *pRoom)
 		pBuffer->AddRefCount();
 		if (!pSender->SendPacket(pBuffer))
 			pBuffer->Free();
+
+		pSender->LastTick = CUpdateTime::GetTickCount();
 	}
 	pRoom->ReadUnLock();
 
 	pBuffer->Free();
+}
+
+void CBattleServer::MonitoringSender()
+{
+	time_t   current_time;
+	int TimeStamp = time(&current_time);
+
+	// 전송 리스트
+
+	// 4. 패킷풀 사용
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_PACKET_POOL, CPacketBuffer::PacketPool.GetAllocCount(), TimeStamp);
+
+	// 1. ON / OFF
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_SERVER_ON, 1, TimeStamp);
+	// 2. CPU 사용률
+
+	int CpuUsage = pMonitorAgent->GetCpuUsage();
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_CPU, CpuUsage, TimeStamp);
+
+	// 3. 메모리 유저 커밋사용
+	int MemoryUsage = pMonitorAgent->GetMemoryUsage();
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_MEMORY_COMMIT, MemoryUsage, TimeStamp);
+
+
+	// 5. Auth 스레드 초당 루프 수
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_AUTH_FPS, _Monitor_Counter_AuthUpdate, TimeStamp);
+
+	// 6. Game 스레드 초당 루프 수
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_GAME_FPS, _Monitor_Counter_GameUpdate, TimeStamp);
+	// 7. 배틀 서버 전체 접속수
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_SESSION_ALL, _Monitor_SessionAllMode, TimeStamp);
+	// 8. Auth 모드 인원
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_SESSION_AUTH, _Monitor_SessionAuthMode, TimeStamp);
+	// 9. Game 모드 인원
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_SESSION_GAME, _Monitor_SessionGameMode, TimeStamp);
+	// 10. 대기방 수
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_ROOM_WAIT, OpenRoom, TimeStamp);
+	// 11. 플레이 방 수
+	MonitorSenderAgent->Send(dfMONITOR_DATA_TYPE_BATTLE_ROOM_PLAY, GameRoom, TimeStamp);
 }

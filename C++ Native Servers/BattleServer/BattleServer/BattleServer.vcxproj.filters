@@ -28,6 +28,9 @@
     <Filter Include="Player">
       <UniqueIdentifier>{812a0a7f-eb08-434c-8694-9de64cc491d6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Monitoring">
+      <UniqueIdentifier>{dc7f81cc-bebc-4933-a997-2056059d506c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\APIHook.cpp">
@@ -95,6 +98,15 @@
     </ClCompile>
     <ClCompile Include="ContentsData.cpp">
       <Filter>BattleServer</Filter>
+    </ClCompile>
+    <ClCompile Include="Morntoring.cpp">
+      <Filter>Monitoring</Filter>
+    </ClCompile>
+    <ClCompile Include="CpuUsage.cpp">
+      <Filter>Monitoring</Filter>
+    </ClCompile>
+    <ClCompile Include="MornitoringAgent.cpp">
+      <Filter>Monitoring</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -178,6 +190,15 @@
     </ClInclude>
     <ClInclude Include="ContentsData.h">
       <Filter>BattleServer</Filter>
+    </ClInclude>
+    <ClInclude Include="Morntoring.h">
+      <Filter>Monitoring</Filter>
+    </ClInclude>
+    <ClInclude Include="CpuUsage.h">
+      <Filter>Monitoring</Filter>
+    </ClInclude>
+    <ClInclude Include="MornitoringAgent.h">
+      <Filter>Monitoring</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

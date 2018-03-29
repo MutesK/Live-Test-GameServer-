@@ -5,7 +5,7 @@
 CMemoryPoolTLS<CPacketBuffer> CPacketBuffer::PacketPool;
 
 
-LONG64 CPacketBuffer::AllocCount;
+LONG64 CPacketBuffer::AllocCount = 0;
 
 CPacketBuffer::CPacketBuffer()
 {
@@ -106,10 +106,7 @@ int	CPacketBuffer::GetData(char *chpDest, int iSize)
 		ErrorCode = 5;
 		return 0;
 	}
-	
 	memcpy(chpDest, m_chpReadPos, iSize);
-	memset(m_chpReadPos, 0, iSize);
-
 	m_chpReadPos += iSize;
 	m_iDataSize -= iSize;
 
@@ -177,7 +174,7 @@ void CPacketBuffer::Free()
 
 	if (InterlockedDecrement64(&m_ReferenceCount) == 0)
 	{
-		AllocCount--;
+		InterlockedAdd64(&AllocCount, -1);
 		m_bAlloced = false;
 		PacketPool.Free(this);
 	}
@@ -385,6 +382,7 @@ void CPacketBuffer::SettingBuffer(int Size)
 		return;
 	}
 
+	InterlockedAdd64(&AllocCount, 1);
 	BufferInit = 0xAAAABBBBDDDDFFFF;
 	m_chpBuffer = new char[Size];
 	ZeroMemory(m_chpBuffer, Size);

@@ -147,6 +147,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="CommonProtocol.h" />
+    <ClInclude Include="CpuUsage.h" />
     <ClInclude Include="Engine\APIHook.h" />
     <ClInclude Include="Engine\CCrashDump.h" />
     <ClInclude Include="Engine\CLockFreeQueue.h" />
@@ -170,8 +171,11 @@
     <ClInclude Include="Engine\UpdateTime.h" />
     <ClInclude Include="LanMatchServer.h" />
     <ClInclude Include="MatchServer.h" />
+    <ClInclude Include="MornitoringAgent.h" />
+    <ClInclude Include="Morntoring.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CpuUsage.cpp" />
     <ClCompile Include="Engine\APIHook.cpp" />
     <ClCompile Include="Engine\CProfiler.cpp" />
     <ClCompile Include="Engine\CSystemLog.cpp" />
@@ -188,6 +192,8 @@
     <ClCompile Include="LanMatchServer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MatchServer.cpp" />
+    <ClCompile Include="MornitoringAgent.cpp" />
+    <ClCompile Include="Morntoring.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="_MatchServer.cnf" />

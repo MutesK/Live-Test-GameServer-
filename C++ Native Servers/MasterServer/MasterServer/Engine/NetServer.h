@@ -47,7 +47,7 @@ private:
 		};
 
 		CLockFreeQueue<CPacketBuffer *>SendQ;
-		CQueue<CPacketBuffer *>PeekQ;
+		CLockFreeQueue<CPacketBuffer *>PeekQ;
 		CStreamBuffer RecvQ;
 
 		OVERLAPPED	  SendOverlapped;

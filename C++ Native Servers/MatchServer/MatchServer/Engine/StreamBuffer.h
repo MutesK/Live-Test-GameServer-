@@ -154,7 +154,7 @@ private:
 	enum
 	{
 		enBUFFER_BLANK = 1,
-		enBUFFER_SIZE = 20000
+		enBUFFER_SIZE = 4096
 	};
 };
 

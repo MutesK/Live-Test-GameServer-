@@ -403,7 +403,10 @@ UINT CLanServer::AcceptWork()
 		RecvPost(pSession);
 
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Session Accept Disconnect, SessionID = %I64d", pSession->SessionID);
 			Disconnect(pSession);
+		}
 	}
 
 	return 1;
@@ -419,31 +422,42 @@ UINT CLanServer::WorkerWork()
 	DWORD cbTransffered;
 	LPOVERLAPPED pOverlapped;
 	CSession *pSession;
-
+	int ErrorCode = 0;
 	while (1)
 	{
+		ErrorCode = 0;
 		cbTransffered = 0;
 		pOverlapped = nullptr;
 		pSession = nullptr;
 
+		PRO_END(L"WorkerThread");
+		//	OnWorkerThreadEnd();
 		int retval = GetQueuedCompletionStatus(m_IOCP, &cbTransffered, (PULONG_PTR)&pSession, &pOverlapped, INFINITE);
-
+		//	OnWorkerThreadBegin();
+		PRO_BEGIN(L"WorkerThread");
 
 		// 워커스레드 정상종료 체크
 		if (pOverlapped == nullptr && pSession == nullptr && cbTransffered == 0)
 		{
 			PostQueuedCompletionStatus(m_IOCP, 0, 0, 0);
+			//	OnWorkerThreadEnd();
 			break;
 		}
 
 		if (pSession == nullptr)
 			continue;
 
+		if (retval == false)
+		{
+			ErrorCode = GetLastError();
+
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionID: %I64d, Socket : %d, IOCP Returns 0, ErrorCode : %d",
+				pSession->SessionID, pSession->socket, ErrorCode);
+		}
+
 		// 소켓 종료
 		if (cbTransffered == 0)
-		{
 			shutdown(pSession->socket, SD_BOTH);
-		}
 		else
 			// 완료통지
 		{
@@ -452,15 +466,24 @@ UINT CLanServer::WorkerWork()
 
 			if (pOverlapped == &pSession->RecvOverlapped)
 				RecvProc(pSession, cbTransffered);
-			
+
 			else if (pOverlapped == &pSession->SendOverlapped)
+			{
 				SendProc(pSession, cbTransffered);
+
+				if (pSession->m_bSendShutdown && pSession->SendQ.GetUseSize() == 0)
+					shutdown(pSession->socket, SD_BOTH);
+			}
 		}
 
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
-			Disconnect(pSession);
-	}
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Worker Disconnect SessionID: %I64d, Socket : %d, ErrorCode : %d",
+				pSession->SessionID, pSession->socket, ErrorCode);
 
+			Disconnect(pSession);
+		}
+	}
 	return 1;
 }
 
@@ -516,6 +539,7 @@ bool CLanServer::RecvProc(CSession *pSession, DWORD cbTransffered)
 
 		if (Len > en_MAX_RECVBYTES)
 		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"RecvProc  Disconnect, SessionID = %I64d, Packet Length is Too High, Request Len : %d", pSession->SessionID, Len);
 			Disconnect(pSession);
 			return false;
 		}
@@ -652,6 +676,9 @@ bool CLanServer::ErrorCheck(CSession *pSession, int errorcode, int TransType)
 
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
 		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Socket Error Disconnect, SessionID = %I64d, Type : %s, ErrorCode : %d", pSession->SessionID, 
+				TransType == en_TYPESEND ? L"Send" : L"Recv", errorcode);
+
 			Disconnect(pSession);
 			return true;
 		}
@@ -687,23 +714,30 @@ bool CLanServer::SessionAcquireLock(ULONG64 SessionID)
 	if (pSession->ReleaseFlag.IOCount == 1)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #1 SessionID = %I64d, ", pSession->SessionID);
 			Disconnect(pSession);
-
+		}
 		return false;
 	}
 
 	if (pSession->ReleaseFlag.UseFlag == 0)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #2 SessionID = %I64d, ", pSession->SessionID);
 			Disconnect(pSession);
-
+		}
 		return false;
 	}
 
 	if (pSession->SessionID != SessionID || pSession->SessionID == 0)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #3 SessionID = %I64d", pSession->SessionID);
 			Disconnect(pSession);
+		}
 
 		return false;
 	}
@@ -715,7 +749,10 @@ bool CLanServer::SessionAcquireLock(ULONG64 SessionID)
 void  CLanServer::SessionAcquireFree(CSession *pSession)
 {
 	if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+	{
+		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquire Free Disconnect, CUZ #3 SessionID = %I64d", pSession->SessionID);
 		Disconnect(pSession);
+	}
 }
 
 int CLanServer::ServerGetLastError()

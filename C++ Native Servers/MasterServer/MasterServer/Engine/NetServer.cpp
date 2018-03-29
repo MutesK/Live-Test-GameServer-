@@ -82,6 +82,8 @@ bool CNetServer::SendPost(CSession *pSession)
 
 			if (bufcount >= en_MAX_SENDBUF)
 				break;
+
+			Sleep(0);
 		}
 
 		pSession->m_SendCount = bufcount;
@@ -412,15 +414,14 @@ UINT CNetServer::AcceptWork()
 		InterlockedAdd(&m_AcceptTPS, 1);
 		InterlockedIncrement(&pSession->ReleaseFlag.IOCount);
 
-		if (!SessionAcquireLock(pSession->SessionID))
-			continue;
-
 		OnClientJoin(pSession->SessionID, IP, Port);
 		RecvPost(pSession);
 
-		SessionAcquireFree(pSession);
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Session Accept Disconnect, SessionID = %I64d", pSession->SessionID);
 			Disconnect(pSession);
+		}
 	}
 
 	return 1;
@@ -436,9 +437,11 @@ UINT CNetServer::WorkerWork()
 	DWORD cbTransffered;
 	LPOVERLAPPED pOverlapped;
 	CSession *pSession;
+	int ErrorCode = 0;
 
 	while (1)
 	{
+		ErrorCode = 0;
 		cbTransffered = 0;
 		pOverlapped = nullptr;
 		pSession = nullptr;
@@ -460,11 +463,19 @@ UINT CNetServer::WorkerWork()
 		if (pSession == nullptr)
 			continue;
 
+		if (retval == false)
+		{
+			ErrorCode = GetLastError();
+
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionID: %I64d, Socket : %d, IOCP Returns 0, ErrorCode : %d",
+				pSession->SessionID, pSession->socket, ErrorCode);
+
+			continue;
+		}
+
 		// 소켓 종료
 		if (cbTransffered == 0)
-		{
 			shutdown(pSession->socket, SD_BOTH);
-		}
 		else
 			// 완료통지
 		{
@@ -484,7 +495,12 @@ UINT CNetServer::WorkerWork()
 		}
 
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Worker Disconnect SessionID: %I64d, Socket : %d, ErrorCode : %d",
+				pSession->SessionID, pSession->socket, ErrorCode);
+
 			Disconnect(pSession);
+		}
 	}
 
 	return 1;
@@ -506,17 +522,18 @@ UINT CNetServer::SendWork()
 
 		while (SendThreadQueue.Dequeue(&SessionID))
 		{
-			//if (!SessionAcquireLock(SessionID))
-			//	continue;
-
 			pSession = FindSession(SessionID);
 
 			if (pSession == nullptr)
 				continue;
 
+			if (!SessionAcquireLock(SessionID))
+				continue;
+
+
 			SendPost(pSession);
 
-			///SessionAcquireFree(pSession);
+			SessionAcquireFree(pSession);
 		}
 	}
 
@@ -541,6 +558,8 @@ bool CNetServer::RecvProc(CSession *pSession, DWORD cbTransffered)
 		// 패킷코드 검사 
 		if (Header.byCode != m_PacketCode)
 		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"RecvProc  Disconnect, SessionID = %I64d, PacketCode Error", pSession->SessionID);
+
 			Disconnect(pSession);
 			break;
 		}
@@ -548,6 +567,8 @@ bool CNetServer::RecvProc(CSession *pSession, DWORD cbTransffered)
 		// 이하는 명백한 공격패킷
 		if (Header.shLen + 5 > pSession->RecvQ.GetUseSize())
 		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"RecvProc  Disconnect, SessionID = %I64d, Packet Length Mismatch", pSession->SessionID);
+
 			Disconnect(pSession);
 			break;
 		}
@@ -599,6 +620,9 @@ bool CNetServer::SendProc(CSession *pSession, DWORD cbTransffered)
 		pTemp->Free();
 
 		m_SendPacketTPS++;
+
+		Sleep(0);
+
 	}
 
 	while (pSession->PeekQ.Dequeue(&pTemp))
@@ -689,6 +713,9 @@ bool CNetServer::ErrorCheck(CSession *pSession, int errorcode, int TransType)
 		
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
 		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Socket Error Disconnect, SessionID = %I64d, Type : %s, ErrorCode : %d", pSession->SessionID,
+				TransType == en_TYPESEND ? L"Send" : L"Recv", errorcode);
+
 			Disconnect(pSession);
 			return true;
 		}
@@ -726,23 +753,30 @@ bool CNetServer::SessionAcquireLock(ULONG64 SessionID)
 	if (pSession->ReleaseFlag.IOCount == 1)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #1 SessionID = %I64d, ", pSession->SessionID);
 			Disconnect(pSession);
-
+		}
 		return false;
 	}
 
 	if (pSession->ReleaseFlag.UseFlag == 0)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #2 SessionID = %I64d, ", pSession->SessionID);
 			Disconnect(pSession);
-
+		}
 		return false;
 	}
 
 	if (pSession->SessionID != SessionID || pSession->SessionID == 0)
 	{
 		if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquireLock Disconnect, CUZ #3 SessionID = %I64d", pSession->SessionID);
 			Disconnect(pSession);
+		}
 
 		return false;
 	}
@@ -754,7 +788,10 @@ bool CNetServer::SessionAcquireLock(ULONG64 SessionID)
 void  CNetServer::SessionAcquireFree(CSession *pSession)
 {
 	if (InterlockedDecrement(&pSession->ReleaseFlag.IOCount) == 0)
+	{
+		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionAcquire Free Disconnect, CUZ #3 SessionID = %I64d", pSession->SessionID);
 		Disconnect(pSession);
+	}
 }
 
 int CNetServer::ServerGetLastError()

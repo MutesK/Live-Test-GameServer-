@@ -1,7 +1,8 @@
 #include "ChatServer.h"
 #include "Engine/Parser.h"
 #include "LanBattle.h"
-
+#include "MornitoringAgent.h"
+#include "Morntoring.h"
 using namespace std;
 
 
@@ -53,14 +54,30 @@ bool CChatServer::Start(WCHAR *szServerConfig, bool nagleOption)
 		return false;
 
 	hUpdateThread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, UpdateThread, this, 0, nullptr));
-
 	b_ExitFlag = false;
-
 	StartTime = CUpdateTime::GetSystemTime();
-
 	hUpdateEvent = CreateEvent(nullptr, false, false, nullptr);
 
-	//LogIndex = 0;
+	int ServerNo;
+	array<BYTE, 32> LoginSessionKey;
+	WCHAR _LoginKey[32];
+
+	Parser.GetValue(L"SERVER_NO", &ServerNo, L"NETWORK");
+
+	Parser.GetValue(L"LOGIN_TOKEN", _LoginKey, L"SYSTEM");
+	UTF16toUTF8(reinterpret_cast<char *>(LoginSessionKey.data()), _LoginKey, 32);
+
+	array<WCHAR, 16> MornitorIP;
+	int MorintorPort;
+
+	Parser.GetValue(L"MORNITOR_IP", &MornitorIP[0], L"NETWORK");
+	Parser.GetValue(L"MORNITOR_PORT", &MorintorPort, L"NETWORK");
+
+	MonitorAgent = make_shared<CMornitoringAgent>(*this, ServerNo, LoginSessionKey);
+	if (!MonitorAgent->Connect(MornitorIP, MorintorPort, true))
+		return false;
+
+	Monitor = make_shared<CMornitoring>();
 
 	return true;
 }
@@ -77,13 +94,7 @@ void CChatServer::Stop()
 //================================================================================================
 void CChatServer::OnClientJoin(ULONG64 OutSessionID, WCHAR *pClientIP, int Port)
 {
-	Queue_DATA *pNewData = UpdatePool.Alloc();
 
-	pNewData->Type = enJoinSession;
-	pNewData->SessionID = OutSessionID;
-	UpdateQueue.Enqueue(&pNewData);
-
-	SetEvent(hUpdateEvent);
 }
 
 void CChatServer::OnClientLeave(ULONG64 SessionID)
@@ -155,10 +166,6 @@ bool CChatServer::UpdateWork()
 		{
 			switch (Data->Type)
 			{
-			case enJoinSession:
-				// 플래이어 풀 할당만 해준다.
-				JoinSession(Data->SessionID);
-				break;
 			case enDISSession:
 				DisconnectSession(Data->SessionID);
 				break;
@@ -219,6 +226,11 @@ void CChatServer::MsgProc(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 void CChatServer::JoinSession(ULONG64 SessionID)
 {
+
+}
+
+void CChatServer::ReqLogin(ULONG64 SessionID, CPacketBuffer *pBuffer)
+{
 	if (SessionID == 0)
 		return;
 
@@ -236,20 +248,9 @@ void CChatServer::JoinSession(ULONG64 SessionID)
 	{
 		PlayerPool.Free(pPlayer);
 		Disconnect(SessionID);
-	}
-}
-
-void CChatServer::ReqLogin(ULONG64 SessionID, CPacketBuffer *pBuffer)
-{
-	auto iter = PlayerMap.find(SessionID);
-
-	if (iter == PlayerMap.end())
-	{
-		Disconnect(SessionID);
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"ReqLogin JoinSession Already SessionID Exist");
 		return;
 	}
-
-	CPlayer *pPlayer = iter->second;
 
 	__int64 AccountNo;
 
@@ -271,7 +272,7 @@ void CChatServer::ReqLogin(ULONG64 SessionID, CPacketBuffer *pBuffer)
 	ResLogin(pPlayer, true);
 
 	pPlayer->Logined = true;
-}
+} 
 
 void CChatServer::ResLogin(CPlayer *pPlayer, BYTE bResult)
 {
@@ -294,6 +295,7 @@ void CChatServer::ReqEnterRoom(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 	if (iter == PlayerMap.end())
 	{
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"ReqEnterRoom SessionID %I64d isn't Exist in PlayerMap", SessionID);
 		Disconnect(SessionID);
 		return;
 
@@ -303,6 +305,8 @@ void CChatServer::ReqEnterRoom(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 	if (pPlayer->SessionID != SessionID)
 	{
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"ReqEnterRoom SessionID %I64d isn't Matched", SessionID);
+
 		if (!Disconnect(SessionID))
 			DisconnectSession(pPlayer->SessionID);
 
@@ -357,6 +361,7 @@ void CChatServer::ReqChatMessage(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 	if (iter == PlayerMap.end())
 	{
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"ReqChatMessage SessionID %I64d isn't Exist in PlayerMap", SessionID);
 		Disconnect(SessionID);
 		return;
 	}
@@ -365,6 +370,8 @@ void CChatServer::ReqChatMessage(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 	if (pPlayer->SessionID != SessionID)
 	{
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"ReqChatMessage SessionID %I64d isn't Matched", SessionID);
+
 		if (!Disconnect(SessionID))
 			DisconnectSession(pPlayer->SessionID);
 
@@ -446,7 +453,7 @@ void CChatServer::DisconnectSession(ULONG64 SessionID)
 	if (!pPlayer->Logined && !pPlayer->EnterRoom)
 	{
 		// Error Disconnect 일 가능성이 큼.
-		wprintf(L"Check Player Dectected \n");
+		SYSLOG(L"DISCONNECT", LOG_ERROR, L"Maybe Error Disconnected SessionID : %I64d", SessionID);
 	}
 
 	PlayerMap.erase(SessionID);
@@ -475,6 +482,7 @@ void CChatServer::Mornitoring()
 	wprintf(L"StartTime : %4d.%2d.%2d. %02d:%02d:%02d \n", StartTime.wYear, StartTime.wMonth, StartTime.wDay, StartTime.wHour,
 		StartTime.wMinute, StartTime.wSecond);
 	wcout << L"SessionNum : " << m_NowSession << L"\n";
+	MornitorSender();
 	wcout << L"Packet Pool : " << CPacketBuffer::PacketPool.GetChunkSize() << L"\n";
 	wcout << L"Packet Pool Use: " << CPacketBuffer::PacketPool.GetAllocCount() << L"\n\n";
 
@@ -577,4 +585,28 @@ void CChatServer::DisconnectBattleServer()
 		}
 		RoomArray[RoomNo].UnLock();
 	}
+}
+
+void CChatServer::MornitorSender()
+{
+	time_t   current_time;
+	int TimeStamp = time(&current_time);
+
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_MATCH_PACKET_POOL, CPacketBuffer::PacketPool.GetAllocCount(), TimeStamp);
+
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_SERVER_ON, 1, TimeStamp);
+
+	int CpuUsage = Monitor->GetCpuUsage();
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_CPU, CpuUsage, TimeStamp);
+
+	int MemUsage = Monitor->GetMemoryUsage();
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_MEMORY_COMMIT, MemUsage, TimeStamp);
+
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_SESSION, m_NowSession, TimeStamp);
+
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_PLAYER, PlayerMap.size(), TimeStamp);
+
+	MonitorAgent->Send(dfMONITOR_DATA_TYPE_CHAT_ROOM, m_WorkingRoom, TimeStamp);
+
+
 }

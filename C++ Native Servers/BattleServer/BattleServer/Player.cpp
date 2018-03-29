@@ -30,9 +30,11 @@ void CPlayer::ResetPlayer()
 	memset(SessionKey, 0, 64);
 	memset(NickName, 0, 40);
 
-
+	Die = false;
 	VerCode = RoomNo = AccountNo = ProcessType = 0;
 
+	Record_Die = Record_PlayCount = Record_PlayTime
+		= Record_Kill = Record_Win = 0;
 }
 bool CPlayer::OnAuth_SessionLeave(bool bToGame)
 {
@@ -66,15 +68,13 @@ bool CPlayer::OnAuth_Packet(CPacketBuffer *pPacket)
 
 	pPacket->Free();
 
-	LastTick = CUpdateTime::GetTickCount();
+	_LastRecvPacketTime = CUpdateTime::GetTickCount();
 
 	return true;
 }
 void CPlayer::OnAuth_Timeout(void)
 {
-	pBattleServer->DisconnectedPlayer(this);
-	ResetPlayer();
-	AccountNo = -1;
+	SYSLOG(L"TIMEOUT", LOG_SYSTEM, L"Timeout Session On AuthMode: AccountNo : %I64d", AccountNo);
 }
 
 bool CPlayer::OnGame_SessionJoin(void)
@@ -85,8 +85,6 @@ bool CPlayer::OnGame_SessionJoin(void)
 bool CPlayer::OnGame_SessionLeave(void)
 {
 	pBattleServer->DisconnectedPlayer(this);
-	ResetPlayer();
-	AccountNo = -1;
 
 	return true;
 }
@@ -116,20 +114,23 @@ bool CPlayer::OnGame_Packet(CPacketBuffer *pPacket)
 	case en_PACKET_CS_GAME_REQ_HIT_DAMAGE:
 		ReqHitDamage(pPacket);
 		break;
+	case en_PACKET_CS_GAME_REQ_MEDKIT_GET:
+		ReqMedkitGet(pPacket);
+		break;
 	}
-	ProcessType = Type;
+	if (!Die)
+		ProcessType = Type;
+	
 	pPacket->Free();
-
-	LastTick = CUpdateTime::GetTickCount();
+	_LastRecvPacketTime = CUpdateTime::GetTickCount();
 
 	return true;
 }
 
 void CPlayer::OnGame_Timeout(void)
 {
-	pBattleServer->DisconnectedPlayer(this);
-	ResetPlayer();
-	AccountNo = -1;
+	// SYSLOG(L"TIMEOUT", LOG_SYSTEM, L"Timeout Session On GameMode: AccountNo : %I64d", AccountNo);
+	// pBattleServer->DisconnectedPlayer(this);
 }
 
 bool CPlayer::OnGame_SessionRelease(void)
@@ -177,6 +178,9 @@ void CPlayer::ReqEnterRoom(CPacketBuffer *pPacket)
 
 void CPlayer::ReqMovePlayer(CPacketBuffer *pBuffer)
 {
+	if (Die)
+		return;
+
 	INT64 AccountNo; // Debug Variable;
 
 	float TargetX, TargetY, TargetZ;
@@ -193,6 +197,8 @@ void CPlayer::ReqHitPoint(CPacketBuffer *pBuffer)
 	//
 	//	실시간으로 보낼 필요는 없으나 시야 동기화를 위해서 보냄
 	//  자기 자신에게는 보내지말자
+	if (Die)
+		return;
 
 	*pBuffer >> HitPointX >> HitPointY >> HitPointZ;
 }
@@ -205,11 +211,23 @@ void CPlayer::ReqFire1(CPacketBuffer *pBuffer)
 	//	총에 맞은 오브젝트는 별도의 패킷으로 전송
 
 	// 자기 자신에게는 보내지 않는다.
+	if (Die)
+		return;
 
 	*pBuffer >> HitPointX >> HitPointY >> HitPointZ;
 }
 
 void CPlayer::ReqHitDamage(CPacketBuffer *pBuffer)
 {
+	if (Die)
+		return;
 	*pBuffer >> TargetAccountNo;
+}
+
+void CPlayer::ReqMedkitGet(CPacketBuffer *pBuffer)
+{
+	if (Die)
+		return;
+
+	*pBuffer >> GetMedKitID;
 }

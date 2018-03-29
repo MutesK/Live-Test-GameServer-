@@ -5,6 +5,8 @@ CCrashDump Dump;
 long CCrashDump::_DumpCount;
 int main()
 {
+	_getch();
+
 	SYSLOG_DIRECTROYSET(L"BattleServer_Log");
 
 	pBattleServer = new CBattleServer(6000);

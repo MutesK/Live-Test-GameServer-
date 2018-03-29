@@ -54,6 +54,7 @@ struct st_CLIENT_CONNECT
 	USHORT	_Port;
 
 	SOCKET	socket;
+
 };
 
 class CNetSession

@@ -332,8 +332,10 @@ int BattleLanServer::CloseRoom(ULONG64 SessionID, int RoomNo)
 		if (BattleServerArr[i].OutSessionID == SessionID)
 		{
 			CRoom *pRoom = &BattleServerArr[i].Rooms[RoomNo];
+			pRoom->Lock();
 			pRoom->isUse = false;
 			_InterlockedAdd64(&ActivateGameRoomTotal, -1);
+			pRoom->UnLock();
 			return true;
 		}
 	}

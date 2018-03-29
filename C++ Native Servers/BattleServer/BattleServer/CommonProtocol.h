@@ -3,6 +3,96 @@
 
 /*
 -------------------------------------------------
+2018.03.07
+
+	변경 en_PACKET_CS_GAME_RES_LOGIN
+
+		중복로그인 체크 후 결과코드 6번 추가
+
+		서버 전체의 중복로그인 체크는 현 구조로는 불가능하며 (DB 또는 별도의 단일 체크가 필요)
+		해당 배틀서버의 중복 로그인만 확인하도록 함 / 만약에 같은 룸에 중복로그인이 되면 클라이언트가 튕길 수 있음
+
+
+2018.03.05
+
+	추가 en_PACKET_CS_GAME_RES_MEDKIT_CREATE
+	추가 en_PACKET_CS_GAME_REQ_MEDKIT_GET
+	추가 en_PACKET_CS_GAME_RES_MEDKIT_GET
+
+	치료 아이템 메드킷 추가
+
+
+2018.03.02
+
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_LEFT,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_TOP,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_RIGHT,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_BOTTOM,
+
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ALERT_LEFT,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ALERT_TOP,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ALERT_RIGHT,
+	추가 en_PACKET_CS_GAME_RES_REDZONE_ALERT_BOTTOM,
+
+	추가 en_PACKET_CS_GAME_RES_REDZONE_DAMAGE
+
+	레드존 기능 추가.  좌측,상단,우측,하단 4구역의 2열/2행씩 레드존.
+	게임 시작 후 40초마다 레드존이 1개씩 활성화 됨 (순서는 랜덤)
+	
+	레드존이 활성화 된 후 해당 구역의 플레이어는 1초마다 1 데미지를 먹음.
+
+
+
+2018.02.27
+
+	추가 en_PACKET_CS_GAME_RES_RECORD
+
+	변경 en_PACKET_CS_GAME_RES_ENTER_ROOM,
+
+		추가 BYTE	MaxUser
+
+		방 입장시 플레이 인원을 알려줌
+
+
+	변경 en_PACKET_CS_GAME_RES_ADD_USER,
+
+		추가 int		Record_PlayCount	// 플레이 횟수
+		추가 int		Record_PlayTime		// 플레이 시간 초단위
+		추가 int		Record_Kill			// 죽인 횟수
+		추가 int		Record_Die			// 죽은 횟수
+		추가 int		Record_Win			// 최종승리 횟수
+
+		대기방 에서도 다른 유저들의 전적을 알려줌
+
+
+
+
+2018.02.22
+
+	추가 en_PACKET_CS_GAME_RES_DIE
+	추가 en_PACKET_CS_GAME_RES_WINNER
+	추가 en_PACKET_CS_GAME_RES_GAMEOVER
+
+
+
+
+
+2018.02.21
+
+	변경 en_PACKET_CS_GAME_RES_HIT_DAMAGE
+
+		추가 INT64	AttackerAccountNo
+
+		데미지 패킷은 공격자 외 다른 플레이어에게만 뿌려주는 용도였으나
+		이를 공격자 포함하여 전체 유저에게 뿌려주는 것으로 변경.
+
+		공격자 클라이언트에서 HP 자체 차감 -> 서버 결과를 받아서 HP 차감 으로 변경 됨.
+
+		공격자 클라이언트는 데미지 타격 애니메이션만 먼저 적용되며 
+		HP 차감은 모든 클라이언트가 공통으로 서버에서 데미지 결과 패킷을 받아서 HP 를 차감 시킨다.
+
+
+
 2018.02.12
 
 	추가 en_PACKET_CS_GAME_REQ_HIT_DAMAGE
@@ -369,6 +459,7 @@ enum en_PACKET_TYPE
 	//									2 : 사용자 오류
 	//									3 : 세션키 오류
 	//									5 : 버전오류
+	//									6 : 중복로그인 (기존사용자 / 이번사용자 모두 끊음)
 	//	}
 	//
 	//	응답의 AccountNo 는 별 필요는 없으나 정확한 테스트를 위해서 넣음.
@@ -405,6 +496,7 @@ enum en_PACKET_TYPE
 	//
 	//		INT64	AccountNo
 	//		int		RoomNo
+	//		BYTE	MaxUser				// 플레이 인원
 	//
 	//		BYTE	Result				//	1 : 성공
 	//									//	2 : EnterToken 불일치
@@ -489,6 +581,12 @@ enum en_PACKET_TYPE
 	//		int		RoomNo
 	//		INT64	AccountNo
 	//		WCHAR	Nickname[20]
+	//
+	//		int		Record_PlayCount	// 플레이 횟수
+	//		int		Record_PlayTime		// 플레이 시간 초단위
+	//		int		Record_Kill			// 죽인 횟수
+	//		int		Record_Die			// 죽은 횟수
+	//		int		Record_Win			// 최종승리 횟수
 	//	}
 	//
 	//	대기중인 방에 유저가 추가됨을 알림 /
@@ -723,10 +821,12 @@ enum en_PACKET_TYPE
 	//	공격자의 타격 패킷.
 	//
 	//	공격자가 클라이언트에서 총 발사 후 타격 판정시 공격자 클라이언트에서 피격 처리 후
-	//	서버에 본 패킷을 전송 함.  해당 클라이언트에서 HP 는 셀프로 차감 됨.
+	//	서버에 본 패킷을 전송 함.  
 	//
-	//	서버에서는 데미지 처리 HP 차감 후 해당 클라이언트를 제외 한 다른 유저에게 보냄
+	//	서버에서는 데미지 처리 HP 차감 후 모든 클라이언트에게 RES 결과를 보내준다.
 	//	피격은 클라이언트가 결정 하지만 HP 차감 계산은 서버가 전담 함.
+	//
+	//  데미지는 서버에서 거리에따라 다르게 처리 하도록 함
 	//------------------------------------------------------------
 	en_PACKET_CS_GAME_REQ_HIT_DAMAGE,
 
@@ -737,7 +837,8 @@ enum en_PACKET_TYPE
 	//	{
 	//		WORD	Type
 	//
-	//		INT64	TargetAccountNo		
+	//		INT64	AttackerAccountNo	// 공격자 AccountNo
+	//		INT64	TargetAccountNo		// 피해자 AccountNo
 	//		int		TargetHP			// 피해자의 현재 Total HP
 	//	}
 	//
@@ -746,10 +847,191 @@ enum en_PACKET_TYPE
 	en_PACKET_CS_GAME_RES_HIT_DAMAGE,
 
 
+	//------------------------------------------------------------
+	// RedZone Damage
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		INT64	AccountNo
+	//		int		HP				// 데미지 계산된 현재의 총 HP
+	//	}
+	//
+	//	레드존 구역으로 인한 데미지시 패킷.
+	//	클라이언트는 이 패킷을 받으면 화면에 피 이펙트를 터트림.
+	//	레드존 피해가 눈에 띄지 않아서 별도로 처리 함.
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_REDZONE_DAMAGE,
+
+
+	//------------------------------------------------------------
+	// Die
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		INT64	DieAccountNo
+	//	}
+	//
+	//	특정 플레이어의 사망
+	//	서버에서 플레이어 HP 가 0이 되었을때 서버에서 해당 플레이어를 죽음처리 하고
+	//	본 패킷을 방 전체에 뿌린다.
+	//
+	//	죽음 처리라는건 죽었다는 플래그 정도, 죽은 유저는 움직이거나 컨텐츠 처리를 하지 않아야 함
+	//	다만 죽었다고 삭제시키는 것은 아님.
+	//
+	//	플레이어의 삭제는 해당 세션이 종료 되었을 경우에만 함.
+	//	죽어도 채팅은 하면서 접속을 유지할 수 있음.
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_DIE,
 
 
 
+	//------------------------------------------------------------
+	// RedZone 경고
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		BYTE	AlertTimeSec
+	//	}
+	//
+	//  서버는 40초마다 새로운 레드존이 활성화 되는데 활성화 20초 전에 해당 경고를 해줌.
+	//  방의 모든 유저에게 뿌림
+	//	클라이언트는 이를 받아서 해당 구역을 깜빡이도록 함.  
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_REDZONE_ALERT_LEFT,
+	en_PACKET_CS_GAME_RES_REDZONE_ALERT_TOP,
+	en_PACKET_CS_GAME_RES_REDZONE_ALERT_RIGHT,
+	en_PACKET_CS_GAME_RES_REDZONE_ALERT_BOTTOM,
 
+	//------------------------------------------------------------
+	// RedZone 활성화
+	//
+	//	{
+	//		WORD	Type
+	//	}
+	//
+	//  실제로 활성화 될때 해당 패킷을 전체 유저에게 보냄.
+	//	이후 부터는 해당구역의 플레이어에게 1초마다 1데미지를 먹임. (en_PACKET_CS_GAME_RES_REDZONE_DAMAGE)
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_LEFT,
+	en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_TOP,
+	en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_RIGHT,
+	en_PACKET_CS_GAME_RES_REDZONE_ACTIVE_BOTTOM,
+
+
+
+	//------------------------------------------------------------
+	// 메드킷 (HP 템) 생성
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		UINT	MedKit ID		// 메드킷 고유 번호  ( ++ 시키는 값)
+	//		float	PosX			
+	//		float	PosY
+	//	}
+	//
+	//	유저 사망시 해당 위치에 메드킷을 생성 후 전체 유저에게 뿌림
+	//
+	//	플레이어의 좌표는 클라리언트 좌표의 MoveTargetX - PosX / MoveTargetZ - PosY 임
+	//	
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_MEDKIT_CREATE,
+
+	//------------------------------------------------------------
+	// 메드킷 획득 요청
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		UINT	MedKit ID		// 메드킷 고유 번호  ( ++ 시키는 값)
+	//	}
+	//
+	//	플레이어가 메드킷에 닿았을때 서버로 이 패킷을 보냄.
+	//
+	//	서버는 해당 메드킷 좌표와, 해당 플레이어의 좌표를 확인하여 X,Y 각 축이 +2 ~ -2 오차범위 내라면
+	//	획득으로 확인하여, 메드킷 삭제 / HP 보상 (g_DataHP / 2 만큼 + 시킴) 후 결과 패킷을 전체에 뿌림. 
+	//	
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_REQ_MEDKIT_GET,
+
+	//------------------------------------------------------------
+	// 메드킷 획득 결과
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		INT64	AccountNo
+	//		UINT	MedKit ID		// 메드킷 고유 번호
+	//		int		HP				// 치료 후 전체 HP
+	//	}
+	//
+	//	메드킷 획득의 결과.	
+	//
+	//	만약 메드킷 획득 요청 확인시 거리문제 또는 존재하지 않는 매드킷 ID 라면 결과없이 무시한다.
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_MEDKIT_GET,
+
+
+
+	//------------------------------------------------------------
+	// Winner
+	//
+	//	{
+	//		WORD	Type
+	//	}
+	//
+	//	최종 1명의 플레이어가 살아 남았을때 해당 플레이어에게 본 패킷 전송
+	//	다른 유저가 모두 죽어서 1명이 남거나,
+	//	다른 유저가 모두 나가서 1명이 남아도,
+	//
+	//	승리자의 화면은 승리문구가 표시됨. 
+	//
+	//  승리와 동시에 게임은 종료 되었으므로, 승리자를 제외한 다른 유저들에게는
+	//	GAMEOVER 패킷을 보내주어야 함
+	//
+	//	게임종료 후 5초 뒤에 자동으로 방을 파괴 시킨다. (유저가 알아서 나간다면 당연히 파괴시킨다)
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_WINNER,
+
+	//------------------------------------------------------------
+	// GameOver
+	//
+	//	{
+	//		WORD	Type
+	//	}
+	//
+	//	게임 종료시 승리자를 제외한 다른 유저들에게 GameOver 패킷 전송.
+	//
+	//	승리자 없으 모두가 죽어버렸을시 본 패킷을 모두에게 전송
+	//	종료된 게임방은 5초후에 파괴된다.
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_GAMEOVER,
+
+
+
+	//------------------------------------------------------------
+	// 전적 변경내용 알림
+	//
+	//	{
+	//		WORD	Type
+	//
+	//		int		Record_PlayCount	// 플레이 횟수
+	//		int		Record_PlayTime		// 플레이 시간 초단위
+	//		int		Record_Kill			// 죽인 횟수
+	//		int		Record_Die			// 죽은 횟수
+	//		int		Record_Win			// 최종승리 횟수
+	//	}
+	//
+	//	플레이어 전적에 변화가 생겼을때 패킷을 보내준다.
+	//	이는 플레이중에 보내는것은 아니며,  결과가 났을때 보냄
+	//
+	//	죽었을 때
+	//	승리했을 때
+	//------------------------------------------------------------
+	en_PACKET_CS_GAME_RES_RECORD,
 
 
 
@@ -1472,11 +1754,7 @@ enum en_PACKET_TYPE
 	//	{
 	//		WORD	Type
 	//
-	//		BYTE	ServerType				// Login / Game / Chat / Agent	하단 Define 됨.
-	//		WCHAR	ServerName[32]			// Game,Chat,Agent 서버는 이름으로 서버 ID 를 맵핑함.
-	//										// ServerLink.cnf 파일의 이름 사용
-	//
-	//										// Login 서버는 'LOGIN' 
+	//		int		ServerNo		// 서버 타입 없이 각 서버마다 고유 번호를 부여하여 사용
 	//	}
 	//
 	//------------------------------------------------------------
@@ -1513,11 +1791,6 @@ enum en_PACKET_TYPE
 	//	{
 	//		WORD	Type
 	//
-	//		WCHAR	ServerName[32]			// 모니터링 대상 서버 이름 
-	//										// ServerLink.cnf 파일의 이름 사용
-	//
-	//										// 통합모니터링은 'COMMON' 사용
-	//
 	//		char	LoginSessionKey[32]		// 로그인 인증 키. (이는 모니터링 서버에 고정값으로 보유)
 	//										// 각 모니터링 툴은 같은 키를 가지고 들어와야 함
 	//	}
@@ -1527,12 +1800,12 @@ enum en_PACKET_TYPE
 
 	//------------------------------------------------------------
 	// 모니터링 클라이언트(툴) 모니터링 서버로 로그인 응답
+	// 로그인에 실패하면 0 보내고 끊어버림
 	//
 	//	{
 	//		WORD	Type
 	//
-	//		BYTE	ServerNo				// 지정 서버 No
-	//		BYTE	Status					// 로그인 결과 0 / 1 / 2 ... 하단 Define
+	//		BYTE	Status					// 로그인 결과 0 / 1 
 	//	}
 	//
 	//------------------------------------------------------------
@@ -1540,15 +1813,10 @@ enum en_PACKET_TYPE
 
 	//------------------------------------------------------------
 	// 모니터링 서버가 모니터링 클라이언트(툴) 에게 모니터링 데이터 전송
-	// 모니터링 툴이 모니터링 서버로 로그인 시 서버를 지정 하였다면 해당 서버의 모니터링 데이터만 전송.
 	//
-	// 모니터링 툴이 모니터링 서버로 'COMMON' 통합 모니터링으로 로그인 하였다면 
-	// 모든 서버에 대한 모니터링 데이터를 보내준다.
+	// 모니터링 서버는 모든 모니터링 클라이언트에게 모든 데이터를 뿌려준다.
 	//
-	// 이 모니터링 데이터는 각 서버가 모니터링 서버에게 보내준 데이터를 그대로 릴레이 전달하는 데이터임.
-	//
-	// COMMON 통합 모니터링 클라의경우 모니터링 데이터가 생각보다 많음.
-	// 이 데이터를 절약하기 위해서는 초단위로 모든 데이터를 묶어서 30~40개의 모니터링 데이터를 하나의 패킷으로 만드는게
+	// 데이터를 절약하기 위해서는 초단위로 모든 데이터를 묶어서 30~40개의 모니터링 데이터를 하나의 패킷으로 만드는게
 	// 좋으나  여러가지 생각할 문제가 많으므로 그냥 각각의 모니터링 데이터를 개별적으로 전송처리 한다.
 	//
 	//	{
@@ -1565,7 +1833,8 @@ enum en_PACKET_TYPE
 	//------------------------------------------------------------
 	en_PACKET_CS_MONITOR_TOOL_DATA_UPDATE,
 
-
+/*
+	원격 제어 기능을 사용하지 않을 것이므로 생략 됨.
 	//------------------------------------------------------------
 	// 모니터링 클라이언트(툴) 가 모니터링 서버에게 서버 컨트롤
 	//
@@ -1581,30 +1850,7 @@ enum en_PACKET_TYPE
 	//
 	//------------------------------------------------------------
 	en_PACKET_CS_MONITOR_TOOL_SERVER_CONTROL,
-
-
-
-
-	////////////////////////////////////////////////////////
-	//
-	//   GameServer & Agent Protocol / 응답을 받지 않음.
-	//
-	////////////////////////////////////////////////////////
-	en_PACKET_SS_AGENT							= 30000,
-	//------------------------------------------------------
-	// Agent Protocol
-	//------------------------------------------------------
-	//------------------------------------------------------------
-	// Agent 가 GameServer 에게 서버종료 명령을 날림
-	// 게임서버는 Agent 에게 이 메시지를 받으면 즉시 서버를 중단한다.
-	//
-	//	{
-	//		WORD	Type
-	//
-	//	}
-	//
-	//------------------------------------------------------------
-	en_PACKET_SS_AGENT_GAMESERVER_SHUTDOWN,
+*/
 
 };
 
@@ -1632,21 +1878,6 @@ enum en_PACKET_CS_GAME_RES_LOGIN
 };
 
 
-
-enum en_PACKET_SS_LOGINSERVER_LOGIN
-{
-	dfSERVER_TYPE_GAME		= 1,
-	dfSERVER_TYPE_CHAT		= 2,
-	dfSERVER_TYPE_MONITOR	= 3,
-};
-
-enum en_PACKET_SS_HEARTBEAT
-{
-	dfTHREAD_TYPE_WORKER	= 1,
-	dfTHREAD_TYPE_DB		= 2,
-	dfTHREAD_TYPE_GAME		= 3,
-};
-
 // en_PACKET_SS_MONITOR_LOGIN
 enum en_PACKET_CS_MONITOR_TOOL_SERVER_CONTROL
 {
@@ -1663,51 +1894,84 @@ enum en_PACKET_CS_MONITOR_TOOL_SERVER_CONTROL
 
 enum en_PACKET_SS_MONITOR_DATA_UPDATE
 {
-	dfMONITOR_DATA_TYPE_LOGIN_SESSION				= 1,		// 로그인서버 세션 수 (컨넥션 수)
-	dfMONITOR_DATA_TYPE_LOGIN_AUTH_TPS				= 2,		// 로그인서버 인증 처리 초당 횟수
-	dfMONITOR_DATA_TYPE_LOGIN_PACKET_POOL			= 3,		// 로그인서버 패킷풀 사용량
-	dfMONITOR_DATA_TYPE_LOGIN_SERVER_ON				= 4,		// 켜진서버 서버 개수
-	dfMONITOR_DATA_TYPE_LOGIN_LIVE_SERVER			= 5,		// 현재 라이브 지정 서버 번호
+	// 별도의 에이전트(서버 컨트롤용) 프로그램이 없으므로 하드웨어 자체의 모니터링 수집은
+	// 매치메이킹 서버가 전담 하도록 합니다..
 
-	dfMONITOR_DATA_TYPE_GAME_SESSION				= 6,		// 게임서버 세션 수 (컨넥션 수)
-	dfMONITOR_DATA_TYPE_GAME_AUTH_PLAYER			= 7,		// 게임서버 AUTH MODE 플레이어 수
-	dfMONITOR_DATA_TYPE_GAME_GAME_PLAYER			= 8,		// 게임서버 GAME MODE 플레이어 수
-	dfMONITOR_DATA_TYPE_GAME_ACCEPT_TPS				= 9,		// 게임서버 Accept 처리 초당 횟수
-	dfMONITOR_DATA_TYPE_GAME_PACKET_PROC_TPS		= 10,		// 게임서버 패킷처리 초당 횟수
-	dfMONITOR_DATA_TYPE_GAME_PACKET_SEND_TPS		= 11,		// 게임서버 패킷 보내기 초당 완료 횟수
-	dfMONITOR_DATA_TYPE_GAME_DB_WRITE_TPS			= 12,		// 게임서버 DB 저장 메시지 초당 처리 횟수
-	dfMONITOR_DATA_TYPE_GAME_DB_WRITE_MSG			= 13,		// 게임서버 DB 저장 메시지 버퍼 개수 (남은 수)
-	dfMONITOR_DATA_TYPE_GAME_AUTH_THREAD_FPS		= 14,		// 게임서버 AUTH 스레드 초당 프레임 수 (루프 수)
-	dfMONITOR_DATA_TYPE_GAME_GAME_THREAD_FPS		= 15,		// 게임서버 GAME 스레드 초당 프레임 수 (루프 수)
-	dfMONITOR_DATA_TYPE_GAME_PACKET_POOL			= 16,		// 게임서버 패킷풀 사용량
-	
-	dfMONITOR_DATA_TYPE_CHAT_SESSION				= 17,		// 채팅서버 세션 수 (컨넥션 수)
-	dfMONITOR_DATA_TYPE_CHAT_PLAYER					= 18,		// 채팅서버 인증성공 사용자 수 (실제 접속자)
-	dfMONITOR_DATA_TYPE_CHAT_UPDATE_TPS				= 19,		// 채팅서버 UPDATE 스레드 초당 초리 횟수
-	dfMONITOR_DATA_TYPE_CHAT_PACKET_POOL			= 20,		// 채팅서버 패킷풀 사용량
-	dfMONITOR_DATA_TYPE_CHAT_UPDATEMSG_POOL			= 21,		// 채팅서버 UPDATE MSG 풀 사용량
-	
-	dfMONITOR_DATA_TYPE_AGENT_GAME_SERVER_RUN		= 22,		// 에이전트 GameServer 실행 여부 ON / OFF
-	dfMONITOR_DATA_TYPE_AGENT_CHAT_SERVER_RUN		= 23,		// 에이전트 ChatServer 실행 여부 ON / OFF
-	dfMONITOR_DATA_TYPE_AGENT_GAME_SERVER_CPU		= 24,		// 에이전트 GameServer CPU 사용률
-	dfMONITOR_DATA_TYPE_AGENT_CHAT_SERVER_CPU		= 25,		// 에이전트 ChatServer CPU 사용률
-	dfMONITOR_DATA_TYPE_AGENT_GAME_SERVER_MEM		= 26,		// 에이전트 GameServer 메모리 사용 MByte
-	dfMONITOR_DATA_TYPE_AGENT_CHAT_SERVER_MEM		= 27,		// 에이전트 ChatServer 메모리 사용 MByte
-	dfMONITOR_DATA_TYPE_AGENT_CPU_TOTAL				= 28,		// 에이전트 서버컴퓨터 CPU 전체 사용률
-	dfMONITOR_DATA_TYPE_AGENT_NONPAGED_MEMORY		= 29,		// 에이전트 서버컴퓨터 논페이지 메모리 MByte	// 최근 수정
-	dfMONITOR_DATA_TYPE_AGENT_NETWORK_RECV			= 30,		// 에이전트 서버컴퓨터 네트워크 수신량 KByte	// 최근 수정
-	dfMONITOR_DATA_TYPE_AGENT_NETWORK_SEND			= 31,		// 에이전트 서버컴퓨터 네트워크 송신량 KByte	// 최근 수정
-	dfMONITOR_DATA_TYPE_AGENT_						= 32,		// 에이전트 서버컴퓨터 
-	dfMONITOR_DATA_TYPE_AGENT_AVAILABLE_MEMORY		= 33,		// 에이전트 서버컴퓨터 사용가능 메모리
+	// 2U 서버 1대에 매치메이킹 / 배틀 / 채팅  3대의 서버가 가동 되겠습니다.
+
+	// 본래 서버 프로세스 ON 여부는 외부에서 판단하여 보내야 하지만
+	// 에이전트 없이 진행 되므로 자기 자신이 보내는것으로 합니다.
+	// 다만 꺼지면 해당 데이터 자체가 안가기 때문에 일정시간 후에 모니터링 툴은 OFF 로 인식하게 됩니다.
+	// OFF 판단까지 5초~10초 정도 시간이 소요되지만 그렇게 합니다.
+
+
+	// 라이브 서비스 환경
+	// 마스터서버		ServerNo	0  공용 1대
+	// 매치 서버			ServerNo	1, 11, 21, 31, 41
+	// 배틀 서버			ServerNo	2, 12, 22, 32, 42
+	// 채팅서버			ServerNo	3, 13, 23, 33, 43
+
+	// 이주행 서버  매칭(1) 배틀(2) 채팅(3)
+	// 신완철 서버  매칭(11) 배틀(12) 채팅(13)
+	// 안상민 서버  매칭(21) 배틀(22) 채팅(23)
+	// 김준민 서버  매칭(31) 배틀(32) 채팅(33)
+
+	// 아래 수치는 enum 이므로 모니터링 클라에서 해당 숫자값 제대로 확인하여 사용
+
+	dfMONITOR_DATA_TYPE_SERVER_CPU_TOTAL = 1,                    // 하드웨어 CPU 사용률 전체
+	dfMONITOR_DATA_TYPE_SERVER_AVAILABLE_MEMORY,                 // 하드웨어 사용가능 메모리
+	dfMONITOR_DATA_TYPE_SERVER_NETWORK_RECV,                     // 하드웨어 이더넷 수신 바이트
+	dfMONITOR_DATA_TYPE_SERVER_NETWORK_SEND,                     // 하드웨어 이더넷 송신 바이트
+	dfMONITOR_DATA_TYPE_SERVER_NONPAGED_MEMORY,                  // 하드웨어 논페이지 메모리 사용량
+
+	dfMONITOR_DATA_TYPE_MATCH_SERVER_ON,                        // 매치메이킹 서버 ON
+	dfMONITOR_DATA_TYPE_MATCH_CPU,                              // 매치메이킹 CPU 사용률 (커널 + 유저)
+	dfMONITOR_DATA_TYPE_MATCH_MEMORY_COMMIT,                    // 매치메이킹 메모리 유저 커밋 사용량 (Private) MByte
+	dfMONITOR_DATA_TYPE_MATCH_PACKET_POOL,                      // 매치메이킹 패킷풀 사용량
+	dfMONITOR_DATA_TYPE_MATCH_SESSION,                          // 매치메이킹 접속 세션
+	dfMONITOR_DATA_TYPE_MATCH_PLAYER,                           // 매치메이킹 접속 유저 (로그인 성공 후)
+	dfMONITOR_DATA_TYPE_MATCH_MATCHSUCCESS,                     // 매치메이킹 방 배정 성공 수 (초당)
+
+
+	dfMONITOR_DATA_TYPE_MASTER_SERVER_ON,                        // 마스터 서버 ON
+	dfMONITOR_DATA_TYPE_MASTER_CPU,                              // 마스터 CPU 사용률 (프로세스)
+	dfMONITOR_DATA_TYPE_MASTER_CPU_SERVER,                       // 마스터 CPU 사용률 (서버 컴퓨터 전체)
+	dfMONITOR_DATA_TYPE_MASTER_MEMORY_COMMIT,                    // 마스터 메모리 유저 커밋 사용량 (Private) MByte
+	dfMONITOR_DATA_TYPE_MASTER_PACKET_POOL,                      // 마스터 패킷풀 사용량
+	dfMONITOR_DATA_TYPE_MASTER_MATCH_CONNECT,                    // 마스터 매치메이킹 서버 연결 수
+	dfMONITOR_DATA_TYPE_MASTER_MATCH_LOGIN,                      // 마스터 매치메이킹 서버 로그인 수
+	dfMONITOR_DATA_TYPE_MASTER_STAY_CLIENT,                      // 마스터 대기자 클라이언트
+	dfMONITOR_DATA_TYPE_MASTER_BATTLE_CONNECT,                   // 마스터 배틀 서버 연결 수
+	dfMONITOR_DATA_TYPE_MASTER_BATTLE_LOGIN,                     // 마스터 배틀 서버 로그인 후
+	dfMONITOR_DATA_TYPE_MASTER_BATTLE_STANDBY_ROOM,              // 마스터 배틀 서버 대기방
+
+
+
+	dfMONITOR_DATA_TYPE_BATTLE_SERVER_ON,                       // 배틀서버 ON
+	dfMONITOR_DATA_TYPE_BATTLE_CPU,                             // 배틀서버 CPU 사용률 (커널 + 유저)
+	dfMONITOR_DATA_TYPE_BATTLE_MEMORY_COMMIT,                   // 배틀서버 메모리 유저 커밋 사용량 (Private) MByte
+	dfMONITOR_DATA_TYPE_BATTLE_PACKET_POOL,                     // 배틀서버 패킷풀 사용량
+	dfMONITOR_DATA_TYPE_BATTLE_AUTH_FPS,                        // 배틀서버 Auth 스레드 초당 루프 수
+	dfMONITOR_DATA_TYPE_BATTLE_GAME_FPS,                        // 배틀서버 Game 스레드 초당 루프 수
+	dfMONITOR_DATA_TYPE_BATTLE_SESSION_ALL,                     // 배틀서버 접속 세션전체
+	dfMONITOR_DATA_TYPE_BATTLE_SESSION_AUTH,                    // 배틀서버 Auth 스레드 모드 인원
+	dfMONITOR_DATA_TYPE_BATTLE_SESSION_GAME,                    // 배틀서버 Game 스레드 모드 인원
+	dfMONITOR_DATA_TYPE_BATTLE_,		                        // 배틀서버 로그인을 성공한 전체 인원		<- 삭제
+	dfMONITOR_DATA_TYPE_BATTLE_ROOM_WAIT,                       // 배틀서버 대기방 수
+	dfMONITOR_DATA_TYPE_BATTLE_ROOM_PLAY,                       // 배틀서버 플레이방 수
+
+	dfMONITOR_DATA_TYPE_CHAT_SERVER_ON,                         // 채팅서버 ON
+	dfMONITOR_DATA_TYPE_CHAT_CPU,                               // 채팅서버 CPU 사용률 (커널 + 유저)
+	dfMONITOR_DATA_TYPE_CHAT_MEMORY_COMMIT,                     // 채팅서버 메모리 유저 커밋 사용량 (Private) MByte
+	dfMONITOR_DATA_TYPE_CHAT_PACKET_POOL,                       // 채팅서버 패킷풀 사용량
+	dfMONITOR_DATA_TYPE_CHAT_SESSION,                           // 채팅서버 접속 세션전체
+	dfMONITOR_DATA_TYPE_CHAT_PLAYER,                            // 채팅서버 로그인을 성공한 전체 인원
+	dfMONITOR_DATA_TYPE_CHAT_ROOM                               // 배틀서버 방 수
+
 };
 
+// MEMORY_COMMIT 사이즈는 PDH 다음 쿼리를 사용 합니다    "\\Process(NAME)\\Private Bytes"
 
-enum en_PACKET_CS_MONITOR_TOOL_RES_LOGIN
-{
-	dfMONITOR_TOOL_LOGIN_OK						= 1,		// 로그인 성공
-	dfMONITOR_TOOL_LOGIN_ERR_NOSERVER			= 2,		// 서버이름 오류 (매칭미스)
-	dfMONITOR_TOOL_LOGIN_ERR_SESSIONKEY			= 3,		// 로그인 세션키 오류
-};
 
 
 //#endif

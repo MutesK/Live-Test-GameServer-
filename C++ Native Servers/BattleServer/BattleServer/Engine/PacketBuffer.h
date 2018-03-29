@@ -194,19 +194,33 @@ public:
 	// 연산자 오퍼레이터.
 	/* ============================================================================= */
 	CPacketBuffer	&operator = (CPacketBuffer &clSrCPacketBuffer);
+	template<typename T>
+	CPacketBuffer& operator<<(const T& Value)
+	{
+		PutData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
+		return *this;
+	}
 
 	template<typename T>
-	CPacketBuffer& operator<<(T& Value)
+	CPacketBuffer& operator<<(const T& Value) const
 	{
-		PutData(reinterpret_cast<char *>(&Value), sizeof(T));
+		PutData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
 		return *this;
 	}
 
 
 	template<typename T>
-	CPacketBuffer& operator >> (T& Value)
+	CPacketBuffer& operator >> (const T& Value)
 	{
-		GetData(reinterpret_cast<char *>(&Value), sizeof(T));
+		GetData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
+		return *this;
+	}
+
+
+	template<typename T>
+	CPacketBuffer& operator >> (const T& Value) const
+	{
+		GetData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
 		return *this;
 	}
 

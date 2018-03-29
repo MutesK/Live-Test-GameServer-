@@ -6,6 +6,8 @@
 #include "Engine/rapidjson\document.h"
 #include "Engine/rapidjson\writer.h"
 #include "Engine/rapidjson\stringbuffer.h"
+#include "MornitoringAgent.h"
+#include "Morntoring.h"
 using namespace rapidjson;
 
 
@@ -27,8 +29,8 @@ CMatchServer::~CMatchServer()
 
 bool CMatchServer::Start(WCHAR *szServerConfig, bool NagleOption)
 {
-	CParser* Parser = new CParser(szServerConfig);
-
+	//CParser* Parser = new CParser(szServerConfig);
+	unique_ptr<CParser> Parser {new CParser(szServerConfig)};
 	WCHAR IP[16];
 	int Port;
 
@@ -48,7 +50,7 @@ bool CMatchServer::Start(WCHAR *szServerConfig, bool NagleOption)
 	Parser->GetValue(L"BIND_PORT", &Port, L"NETWORK");
 
 	Parser->GetValue(L"MASTER_IP", MasterServerIP, L"NETWORK");
-	Parser->GetValue(L"MATER_PORT", &MasterServerPort, L"NETWORK");
+	Parser->GetValue(L"MASTER_PORT", &MasterServerPort, L"NETWORK");
 
 	Parser->GetValue(L"WORKER_THREAD", &WorkerThread, L"NETWORK");
 	Parser->GetValue(L"SHDB_API", shAPIURL, L"NETWORK");
@@ -80,7 +82,7 @@ bool CMatchServer::Start(WCHAR *szServerConfig, bool NagleOption)
 	Parser->GetValue(L"DB_USER", DB_User, L"DATABASE");
 	Parser->GetValue(L"DB_PASS", DB_Pass, L"DATABASE");
 
-	delete Parser;
+
 
 	if (!CNetServer::Start(L"0.0.0.0", Port, WorkerThread, NagleOption, MaxSession, PacketCode,
 		PacketKey1, PacketKey2))
@@ -88,14 +90,32 @@ bool CMatchServer::Start(WCHAR *szServerConfig, bool NagleOption)
 
 	hTimeOut = (HANDLE)_beginthreadex(nullptr, 0, hTimedOutThread, this, 0, nullptr);
 
-	pClient = new CLanMatchServer(this, ServerNo, MasterToken);
+	pClient = make_shared<CLanMatchServer>(this, ServerNo, MasterToken);
+	//pClient = new CLanMatchServer(this, ServerNo, MasterToken);
 	if (!pClient->Connect(MasterServerIP, MasterServerPort, true))
 		return false;
 
-
-	pConnect = new CDBConnectorTLS(DB_IP, DB_User, DB_Pass, DB_Name, DB_Port, 1000);
-	
+	pConnect = make_shared<CDBConnectorTLS>(DB_IP, DB_User, DB_Pass, DB_Name, DB_Port, 1000);
 	FirstDBInsert(IP, Port);
+
+	array<BYTE, 32> LoginSessionKey;
+	WCHAR _LoginKey[32];
+
+	Parser->GetValue(L"LOGIN_TOKEN", _LoginKey, L"SYSTEM");
+	UTF16toUTF8(reinterpret_cast<char *>(LoginSessionKey.data()), _LoginKey, 32);
+	
+	array<WCHAR, 16> MornitorIP;
+	int MorintorPort;
+
+	Parser->GetValue(L"MORNITOR_IP", &MornitorIP[0], L"NETWORK");
+	Parser->GetValue(L"MORNITOR_PORT", &MorintorPort, L"NETWORK");
+
+	pMornitorSender = make_shared<CMornitoringAgent>(*this, ServerNo, LoginSessionKey);
+	if (!pMornitorSender->Connect(MornitorIP, MorintorPort, true))
+		return false;
+
+	pMonitorAgent = make_shared<CMornitoring>();
+
 
 	return true;
 }
@@ -127,25 +147,7 @@ void CMatchServer::OnWorkerThreadEnd()
 
 void CMatchServer::OnClientJoin(ULONG64 OutSessionID, WCHAR *pClientIP, int Port)
 {
-	Player *pPlayer = PlayerPool.Alloc();
 
-	memset(pPlayer, 0, sizeof(Player));
-
-	pPlayer->SessionID = OutSessionID;
-
-	INSERT_SESSION(pPlayer->ClientUniqueKey, ServerNo, UniqueIndex);
-	InterlockedIncrement64(&UniqueIndex);
-
-	pPlayer->LastRecv = CUpdateTime::GetTickCount();
-
-	lstrcpyW(pPlayer->ConnectIP, pClientIP);
-	pPlayer->Port = Port;
-
-	pair <ULONG64, Player *> insertpair = { OutSessionID , pPlayer };
-
-	AcquireSRWLockExclusive(&PlayerLock);
-	PlayerMap.insert(insertpair);
-	ReleaseSRWLockExclusive(&PlayerLock);
 }
 
 void CMatchServer::OnClientLeave(ULONG64 SessionID)
@@ -231,6 +233,7 @@ void CMatchServer::Monitoring()
 	wcout << L"===========================================================\n";
 	wprintf(L"Client Connect : %d\n", m_NowSession);
 
+	pClient->Monitoring();
 	wcout << L"Packet Pool : " << CPacketBuffer::PacketPool.GetChunkSize() << L"\n";
 	wcout << L"Packet Pool Use: " << CPacketBuffer::PacketPool.GetAllocCount() << L"\n\n";
 
@@ -246,18 +249,17 @@ void CMatchServer::Monitoring()
 	wcout << L"Recv PacketTPS :" << m_RecvPacketTPS << endl;
 	wcout << L"Send PacketTPS :" << m_SendPacketTPS << endl;
 
-	m_RecvPacketTPS = m_SendPacketTPS = 0;
-
 	wprintf(L"Request Game Room Info Process  : %d\n", ReqGameRoomTPS);
 	wprintf(L"Request Game Enter Success Process  : %d\n", RoomEnterSuccessTPS);
 	wprintf(L"Request Game Enter Fail Process  : %d\n", RoomEnterFailTPS);
-
-	//ReqGameRoomTPS = RoomEnterSuccessTPS = RoomEnterFailTPS = 0;
 	wcout << L"===========================================================\n";
-	m_AcceptTPS = 0;
-	pClient->Monitoring();
 
 	ConnectUserDBUpdate(m_NowSession);
+	MonitoringSend();
+
+	m_RecvPacketTPS = m_SendPacketTPS = 0;
+	m_AcceptTPS = 0;
+	ReqGameRoomTPS = RoomEnterSuccessTPS = RoomEnterFailTPS = 0;
 }
 
 void CMatchServer::HTTPURLParse()
@@ -351,6 +353,23 @@ void CMatchServer::ReqLogin(ULONG64 OutSessionID, CPacketBuffer *pBuffer)
 	//
 	//	Client Key 의 용도는 마스터 서버에서 클라이언트를 구분하는 값으로 
 	//	매치메이킹 서버가 마스터 서버에게 방 생성 요청, 입장확인 시 사용 함.
+	Player *pPlayer = PlayerPool.Alloc();
+
+	memset(pPlayer, 0, sizeof(Player));
+
+	pPlayer->SessionID = OutSessionID;
+
+	INSERT_SESSION(pPlayer->ClientUniqueKey, ServerNo, UniqueIndex);
+	InterlockedIncrement64(&UniqueIndex);
+
+	pPlayer->LastRecv = CUpdateTime::GetTickCount();
+
+	pair <ULONG64, Player *> insertpair = { OutSessionID , pPlayer };
+
+	AcquireSRWLockExclusive(&PlayerLock);
+	PlayerMap.insert(insertpair);
+	ReleaseSRWLockExclusive(&PlayerLock);
+
 	__int64 AccountNo;
 	char SessionKey[64];
 	BYTE Result = 1;
@@ -429,12 +448,12 @@ void CMatchServer::ReqLogin(ULONG64 OutSessionID, CPacketBuffer *pBuffer)
 		return;
 	}
 
-	//if (VerCode != Ver_Code)
-	//{
-	//	Result = 5;
-	//	ResLogin(OutSessionID, Result);
-	//	return;
-	//}
+	if (VerCode != Ver_Code)
+	{
+		Result = 5;
+		ResLogin(OutSessionID, Result);
+		return;
+	}
 	
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	AcquireSRWLockShared(&PlayerLock);
@@ -448,7 +467,7 @@ void CMatchServer::ReqLogin(ULONG64 OutSessionID, CPacketBuffer *pBuffer)
 	}
 	ReleaseSRWLockShared(&PlayerLock);
 
-	Player *pPlayer = iter->second;
+	pPlayer = iter->second;
 
 	pair <ULONG64, Player *> insertUnipair = { pPlayer->ClientUniqueKey , pPlayer };
 	pPlayer->AccountNo = AccountNo;
@@ -469,10 +488,34 @@ void CMatchServer::ReqLogin(ULONG64 OutSessionID, CPacketBuffer *pBuffer)
 		DisconnectPlayer(pPlayer->SessionID);
 
 	InterlockedAdd64(&LoginRequest, -1);
+
+	pPlayer->isLogined = true;
 }
 void CMatchServer::MasterServerConnect()
 {
 	ServerOpen = true;
+
+	AcquireSRWLockShared(&PlayerLock);
+	for (auto iter = PlayerMap.begin(); iter != PlayerMap.end(); ++iter)
+	{
+		Player * pPlayer = iter->second;
+
+		if (pPlayer->reqRoom)
+		{
+			CPacketBuffer *pBuffer = CPacketBuffer::Alloc();
+			//	매치메이킹 서버가 마스터 서버에게 게임방 정보를 요청
+			WORD Type = en_PACKET_MAT_MAS_REQ_GAME_ROOM;
+
+			*pBuffer << Type << pPlayer->ClientUniqueKey;
+			if (!pClient->MasterSendPacket(pBuffer))
+				ResGameRoom(pPlayer, 0, nullptr);
+			else
+				InterlockedAdd64(&RoomRequest, 1);
+
+			pPlayer->LastRecv = CUpdateTime::GetTickCount();
+		}
+	}
+	ReleaseSRWLockShared(&PlayerLock);
 }
 void CMatchServer::MasterServerDisconnect()
 {
@@ -511,6 +554,7 @@ void CMatchServer::ReqGameRoom(ULONG64 OutSessionID)
 
 	Player *pPlayer = finditer->second;
 	pPlayer->ReqRoomInfo = true;
+	pPlayer->reqRoom = true;
 
 	///////////////////////////////////////////////////////////////////////////////////
 	// 마스터 서버에게 게임방 정보를 요청한다.
@@ -529,6 +573,10 @@ void CMatchServer::ReqGameRoom(ULONG64 OutSessionID)
 
 void CMatchServer::ResGameRoom(Player *pPlayer, BYTE Status, CPacketBuffer *BattleServerInfo)
 {
+
+	if (!pPlayer->isLogined)
+		return;
+
 	switch (Status)
 	{
 	case 0:
@@ -573,6 +621,8 @@ void CMatchServer::ResGameRoom(Player *pPlayer, BYTE Status, CPacketBuffer *Batt
 	break;
 	}
 
+	// pPlayer->ReqRoomInfo = false;
+
 	InterlockedAdd64(&RoomRequest, -1);
 	InterlockedAdd64(&ReqGameRoomTPS, 1);
 }
@@ -595,6 +645,7 @@ void CMatchServer::ReqGameRoomEnter(ULONG64 OutSessionID, CPacketBuffer *pBuffer
 	auto finditer = PlayerMap.find(OutSessionID);
 	if (finditer == PlayerMap.end())
 	{
+		SYSLOG(L"RoomEnter", LOG_SYSTEM, L"SessionID : %llu isn't Found in PlayerMap !!");
 		ReleaseSRWLockShared(&PlayerLock);
 		return;
 	}
@@ -754,3 +805,42 @@ void CMatchServer::ReqGameRoomEnterFail(Player *pPlayer)
 
 }
 /////////////////////////////////////////////////////////////////////////////////////////////
+
+
+void CMatchServer::MonitoringSend()
+{
+	// 보낼 정보 List
+	// 2. CPU 사용률 (Kernel + User)
+	time_t   current_time;
+	int TimeStamp = time(&current_time);
+
+	// 4. 패킷풀 사용량
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_PACKET_POOL, CPacketBuffer::PacketPool.GetAllocCount(), TimeStamp);
+
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_SERVER_ON, 1, TimeStamp);
+
+	int CpuUsage = pMonitorAgent->GetCpuUsage();
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_CPU, CpuUsage, TimeStamp);
+
+
+	// 3. 메치메이킹 메모리 유저 커밋 사용량
+
+	int MemoryUsage = pMonitorAgent->GetMemoryUsage();
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_MEMORY_COMMIT, MemoryUsage, TimeStamp);
+
+
+
+	// 5. 접속 세션
+
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_SESSION, m_NowSession, TimeStamp);
+
+	// 6. 접속 유저
+
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_PLAYER, PlayerMap.size(), TimeStamp);
+
+
+	// 7. 초당 배정 성공 수
+
+	pMornitorSender->Send(dfMONITOR_DATA_TYPE_MATCH_MATCHSUCCESS, RoomEnterSuccessTPS, TimeStamp);
+
+}

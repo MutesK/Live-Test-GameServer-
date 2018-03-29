@@ -127,6 +127,15 @@ bool CMatchLanServer::ServerDisconnect(ULONG64 SessionID)
 
 			MatchServerInfo[i].Used = false;
 			_InterlockedAdd64(&MatchServerNum, -1);
+
+			for (auto iter = PlayerMap.begin(); iter != PlayerMap.end(); ++iter)
+			{
+				CPlayer *pPlayer = iter->second;
+
+				PlayerMap.erase(pPlayer->ClinetKey);
+				PlayerPool.Free(pPlayer);
+			}
+
 			return true;
 		}
 	}
@@ -220,7 +229,7 @@ void CMatchLanServer::ReqGameRoom(ULONG64 SessionID, CPacketBuffer *pBuffer)
 
 			if (!pRoom->isUse)
 				continue;
-
+			
 			if (pRoom->MaxUser != 0)
 				Roompq.push(pRoom);
 		}
@@ -228,24 +237,44 @@ void CMatchLanServer::ReqGameRoom(ULONG64 SessionID, CPacketBuffer *pBuffer)
 		if (Roompq.empty())
 			continue;
 
-		CRoom *pRoom = Roompq.top();
+		while (!Roompq.empty())
+		{
+			CRoom *pRoom = Roompq.top();
 
-		pRoom->MaxUser--;
+			pRoom->Lock();
+			if (!pRoom->isUse)
+			{
+				pRoom->UnLock();
+				continue;
+			}
 
-		CPlayer *pPlayer = PlayerPool.Alloc();
-		pPlayer->ClinetKey = ClientKey;
-		pPlayer->RoomNo = pRoom->RoomNo;
-		pPlayer->BattleServerNo = pInfo->BattleServerNo;
-		pPlayer->TickCheck = CUpdateTime::GetTickCount();
+			if (pRoom->MaxUser == 0)
+			{
+				pRoom->UnLock();
+				continue;
+			}
 
-		pair <UINT64, CPlayer *> PlayerPair = { ClientKey, pPlayer };
+			pRoom->MaxUser--;
 
-		AcquireSRWLockExclusive(&PlayerLock);
-		PlayerMap.insert(PlayerPair);
-		ReleaseSRWLockExclusive(&PlayerLock);
+			CPlayer *pPlayer = PlayerPool.Alloc();
+			pPlayer->ClinetKey = ClientKey;
+			pPlayer->RoomNo = pRoom->RoomNo;
+			pPlayer->BattleServerNo = pInfo->BattleServerNo;
+			pPlayer->TickCheck = CUpdateTime::GetTickCount();
+
+			pair <UINT64, CPlayer *> PlayerPair = { ClientKey, pPlayer };
+
+			AcquireSRWLockExclusive(&PlayerLock);
+			PlayerMap.insert(PlayerPair);
+			ReleaseSRWLockExclusive(&PlayerLock);
 
 
-		ResGameRoom(SessionID, pPlayer->ClinetKey, 1, pInfo, pRoom);
+			ResGameRoom(SessionID, pPlayer->ClinetKey, 1, pInfo, pRoom);
+
+			pRoom->UnLock();
+			break;
+		}
+
 		InterlockedAdd64(&RoomRequest, -1);
 		return;
 

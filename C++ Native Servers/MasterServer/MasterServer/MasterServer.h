@@ -33,6 +33,22 @@ public:
 
 	char EnterToken[32];
 
+	SRWLOCK RoomLock;
+
+	CRoom()
+	{
+		InitializeSRWLock(&RoomLock);
+	}
+
+	void Lock()
+	{
+		AcquireSRWLockExclusive(&RoomLock);
+	}
+
+	void UnLock()
+	{
+		ReleaseSRWLockExclusive(&RoomLock);
+	}
 };
 
 class CBattleInfo

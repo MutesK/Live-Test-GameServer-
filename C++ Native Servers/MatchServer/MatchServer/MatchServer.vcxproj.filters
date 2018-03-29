@@ -87,6 +87,18 @@
     <ClInclude Include="MatchServer.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="LanMatchServer.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MornitoringAgent.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="CpuUsage.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Morntoring.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\HttpPost.cpp">
@@ -132,6 +144,18 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="MatchServer.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="LanMatchServer.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="MornitoringAgent.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="CpuUsage.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Morntoring.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

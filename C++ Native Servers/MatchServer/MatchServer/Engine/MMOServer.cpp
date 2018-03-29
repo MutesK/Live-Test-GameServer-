@@ -43,6 +43,12 @@ void CNetSession::SetMode_GAME(void)
 /////////////////////////////////////////////////////////////////////
 void CNetSession::Disconnect(bool bForce)
 {
+	if (_Mode == MODE_AUTH)
+	{
+		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Disconnect Called, MODE : %s, SessionIndex : %d, Session Mode : %d",
+			bForce ? L"Shutdown" : L"closesocket", _iArrayIndex, _Mode);
+	}
+
 	if (bForce)
 		shutdown(_ClientInfo.socket, SD_BOTH);
 	else
@@ -56,7 +62,7 @@ void CNetSession::Disconnect(bool bForce)
 bool CNetSession::SendPacket(CPacketBuffer *pPacket)
 {
 	if (_Mode == MODE_NONE || _Mode == MODE_LOGOUT_IN_AUTH || _Mode == MODE_LOGOUT_IN_GAME
-		|| _Mode == MODE_WAIT_LOGOUT)
+		|| _Mode == MODE_WAIT_LOGOUT || _bLogoutFlag)
 	{
 		pPacket->Free();
 		return false;
@@ -119,7 +125,7 @@ bool CNetSession::RecvPost(void)
 	// 에러 처리
 	if (ret == SOCKET_ERROR)
 		ErrorCheck(WSAGetLastError(), eTypeRECV);
-	
+
 
 	return true;
 }
@@ -176,6 +182,7 @@ void	CNetSession::CompleteRecv(DWORD dwTransferred)
 		if (Header.byCode != g_PacketCode)
 		{
 			// 에러 및 로그처리
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"CompleteRecv PacketCode Error / Session Index : %d Recived PacketCode : %d", _iArrayIndex, Header.byCode);
 			_bLogoutFlag = true;
 			return;
 		}
@@ -193,6 +200,7 @@ void	CNetSession::CompleteRecv(DWORD dwTransferred)
 		if (!pBuffer->Decode())
 		{
 			// 에러 및 로그처리
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"CompleteRecv Packet Decode Error / Session Index : %d", _iArrayIndex);
 			pBuffer->Free();
 			_bLogoutFlag = true;
 			break;
@@ -204,12 +212,17 @@ void	CNetSession::CompleteRecv(DWORD dwTransferred)
 		pBuffer->Free();
 	}
 
-	RecvPost();
+
+	if (_Mode == MODE_NONE || _Mode == MODE_WAIT_LOGOUT
+		|| _Mode == MODE_LOGOUT_IN_AUTH || _Mode == MODE_LOGOUT_IN_GAME || _bLogoutFlag)
+		return;
+	else
+		RecvPost();
 }
 void CNetSession::CompleteSend(DWORD dwTransferred)
 {
 	CPacketBuffer *pTemp;
-	
+
 	for (int i = 0; i < _iSendPacketCnt; i++)
 	{
 		_PeekQ.Dequeue(&pTemp);
@@ -224,11 +237,15 @@ void CNetSession::ErrorCheck(int errorCode, TransType Type)
 	if (errorCode != WSA_IO_PENDING)
 	{
 		if (Type == eTypeSEND)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Socket Error SendFlag Off / Type %d, ErrorCode : %d, Session Index : %d", Type, errorCode, _iArrayIndex);
 			InterlockedExchange(&_ISendIO, 0);
+		}
 
 		if (InterlockedDecrement64(&_IOCount) == 0)
 		{
 			_bLogoutFlag = true;
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Socket Error Logoutflag On / Type %d, ErrorCode : %d, Session Index : %d", Type, errorCode, _iArrayIndex);
 			return;
 		}
 
@@ -243,6 +260,8 @@ void CNetSession::ErrorCheck(int errorCode, TransType Type)
 			OnError(NET_IO_FAULT, L"Client No Buf Error");
 			break;
 		}
+
+		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Socket Error / Type %d, ErrorCode : %d, Session Index : %d", Type, errorCode, _iArrayIndex);
 	}
 }
 
@@ -271,7 +290,10 @@ CMMOServer::~CMMOServer()
 bool CMMOServer::Start(WCHAR *szListenIP, int iPort, int iWorkerThread, bool bNagle, BYTE PacketCode, BYTE PacketKey1, BYTE PacketKey2)
 {
 	if (_bServerOpen)
+	{
+		SYSLOG(L"SYSTM", LOG_SYSTEM, L"Already Server Open Check Bool Variable");
 		return false;
+	}
 
 	lstrcpyW(_szListenIP, szListenIP);
 	_iListenPort = iPort;
@@ -288,6 +310,7 @@ bool CMMOServer::Start(WCHAR *szListenIP, int iPort, int iWorkerThread, bool bNa
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 	{
 		// 에러 처리
+		SYSLOG(L"SYSTM", LOG_SYSTEM, L"WSAStartup Error : WSA GetLastErrorCode : %d", WSAGetLastError());
 		return false;
 	}
 
@@ -295,6 +318,7 @@ bool CMMOServer::Start(WCHAR *szListenIP, int iPort, int iWorkerThread, bool bNa
 	if (_ListenSocket == INVALID_SOCKET)
 	{
 		// 에러 처리
+		SYSLOG(L"SYSTM", LOG_SYSTEM, L"ListenSocket Socket Make Error : WSA GetLastErrorCode : %d", WSAGetLastError());
 		return false;
 	}
 
@@ -307,11 +331,13 @@ bool CMMOServer::Start(WCHAR *szListenIP, int iPort, int iWorkerThread, bool bNa
 	if (bind(_ListenSocket, (SOCKADDR *)&serveraddr, sizeof(serveraddr)) == SOCKET_ERROR)
 	{
 		// 에러 처리
+		SYSLOG(L"SYSTM", LOG_SYSTEM, L"ListenSocket Bind Error : WSA GetLastErrorCode : %d", WSAGetLastError());
 		return false;
 	}
 
 	if (listen(_ListenSocket, SOMAXCONN) == SOCKET_ERROR)
 	{
+		SYSLOG(L"SYSTM", LOG_SYSTEM, L"ListenSocket Listen Error : WSA GetLastErrorCode : %d", WSAGetLastError());
 		return false;
 	}
 
@@ -342,6 +368,8 @@ bool CMMOServer::Start(WCHAR *szListenIP, int iPort, int iWorkerThread, bool bNa
 	_Monitor_SessionAllMode = 0;
 	_Monitor_SessionAuthMode = 0;
 	_Monitor_SessionGameMode = 0;
+
+	return true;
 }
 
 bool CMMOServer::Stop(void)
@@ -350,7 +378,7 @@ bool CMMOServer::Stop(void)
 
 	closesocket(_ListenSocket);
 
-		// Accpet Thread 대기
+	// Accpet Thread 대기
 	WaitForSingleObject(_hAcceptThread, INFINITE);
 	WaitForSingleObject(_hAuthThread, INFINITE);
 	WaitForSingleObject(_hGameUpdateThread, INFINITE);
@@ -469,7 +497,7 @@ bool	CMMOServer::AuthThread_Work()
 
 		ProcAuth_Logout();
 
-		ProcAuth_TimeoutCheck();
+		// ProcAuth_TimeoutCheck();
 
 
 		Sleep(20);
@@ -503,9 +531,7 @@ void CMMOServer::ProcAuth_Accept(void)
 
 		// 해당 공간에 신규 세션을 할당
 		pSession = _pSessionArray[index];
-
 		memcpy(&pSession->_ClientInfo, pConnector, sizeof(st_CLIENT_CONNECT));
-
 		_ClientConnectPool.Free(pConnector);
 
 		InterlockedAdd(&_Monitor_Counter_Accept, 1);
@@ -514,15 +540,28 @@ void CMMOServer::ProcAuth_Accept(void)
 
 		CreateIoCompletionPort((HANDLE)pSession->_ClientInfo.socket, _hIOCP, (ULONG64)pSession, 0);
 
+		pSession->_RecvQ.ClearBuffer();
+		while (pSession->_CompleteRecvQ.Dequeue(&pBuffer))
+			pBuffer->Free();
+		while (pSession->_SendQ.Dequeue(&pBuffer))
+			pBuffer->Free();
+		while (pSession->_PeekQ.Dequeue(&pBuffer))
+			pBuffer->Free();
+
 		// IOCP 연결
 		pSession->_Mode = MODE_AUTH;
 		pSession->_bAuthToGameFlag = false;
 		pSession->_bLogoutFlag = false;
 		InterlockedIncrement64(&pSession->_IOCount);
+
 		pSession->OnAuth_SessionJoin();
 		pSession->RecvPost();
+
 		if (InterlockedDecrement64(&pSession->_IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"ProcAuth_Accept IOCount is Zero, Session Index : %d", pSession->_iArrayIndex);
 			pSession->_bLogoutFlag = true;
+		}
 
 		pSession->_LastRecvPacketTime = CUpdateTime::GetTickCount();
 	}
@@ -610,9 +649,9 @@ void CMMOServer::ProcAuth_TimeoutCheck(void)
 		if (pSession->_Mode != MODE_AUTH)
 			continue;
 
-		if (CUpdateTime::GetTickCount() - pSession->_LastRecvPacketTime >= eTIMEOUT)
+		if (CUpdateTime::GetTickCount() - pSession->_LastRecvPacketTime >= 360000)
 		{
-			pSession->_Mode = MODE_LOGOUT_IN_AUTH;
+			pSession->_bLogoutFlag = true;
 			pSession->OnAuth_Timeout();
 		}
 	}
@@ -723,7 +762,7 @@ void CMMOServer::ProcGame_Logout(void)
 
 		if (pSession->_bLogoutFlag && pSession->_Mode == MODE_GAME)
 			pSession->_Mode = MODE_LOGOUT_IN_GAME;
-		
+
 		if (pSession->_Mode == MODE_LOGOUT_IN_GAME && pSession->_ISendIO == 0)
 		{
 			pSession->_Mode = MODE_WAIT_LOGOUT;
@@ -749,7 +788,13 @@ void CMMOServer::ProcGame_Release(void)
 		if (pSession->_Mode == MODE_WAIT_LOGOUT)
 		{
 			pSession->_Mode = MODE_NONE;
-			pSession->Disconnect();
+
+			CancelIoEx((HANDLE)pSession->_ClientInfo.socket, &pSession->_RecvOverlapped);
+			CancelIoEx((HANDLE)pSession->_ClientInfo.socket, &pSession->_SendOverlapped);
+			pSession->Disconnect(1);
+
+			ZeroMemory(&pSession->_RecvOverlapped, sizeof(OVERLAPPED));
+			ZeroMemory(&pSession->_SendOverlapped, sizeof(OVERLAPPED));
 
 			InterlockedAdd(&_Monitor_SessionAllMode, -1);
 			InterlockedAdd(&_Monitor_AcceptSocket, -1);
@@ -765,6 +810,7 @@ void CMMOServer::ProcGame_Release(void)
 			pSession->_bAuthToGameFlag = false;
 			pSession->_bLogoutFlag = false;
 
+			pSession->Disconnect();
 			_BlankSessionIndexStack.Push(pSession->_iArrayIndex);
 		}
 	}
@@ -784,10 +830,10 @@ void CMMOServer::ProcGame_TimeoutCheck(void)
 		if (pSession->_Mode != MODE_GAME)
 			continue;
 
-		if (CUpdateTime::GetTickCount() - pSession->_LastRecvPacketTime >= eTIMEOUT)
+		if (CUpdateTime::GetTickCount() - pSession->_LastRecvPacketTime >= 30000)
 		{
-			pSession->_Mode = MODE_LOGOUT_IN_GAME;
-			pSession->OnAuth_Timeout();
+			pSession->_bLogoutFlag = true;
+			pSession->OnGame_Timeout();
 		}
 	}
 }
@@ -806,9 +852,10 @@ bool CMMOServer::IOCPWorker_Work()
 	DWORD cbTransffered;
 	LPOVERLAPPED pOverlapped;
 	CNetSession *pSession;
-
+	int ErrorCode = 0;
 	while (1)
 	{
+		ErrorCode = 0;
 		cbTransffered = 0;
 		pOverlapped = nullptr;
 		pSession = nullptr;
@@ -825,11 +872,20 @@ bool CMMOServer::IOCPWorker_Work()
 		if (pSession == nullptr)
 			continue;
 
+		if (retval == false)
+		{
+			ErrorCode = GetLastError();
+
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Session Index : %d, Socket : %d, IOCP Returns 0, ErrorCode : %d, Session Mode : %d", pSession->_iArrayIndex, pSession->_ClientInfo.socket, ErrorCode, pSession->_Mode);
+			continue;
+		}
+
 		if (pSession->_Mode == MODE_NONE)
 			continue;
 
 		if (cbTransffered == 0)
 			pSession->Disconnect(true);
+
 		else
 		{
 			if (pOverlapped == &pSession->_RecvOverlapped)
@@ -838,9 +894,13 @@ bool CMMOServer::IOCPWorker_Work()
 			if (pOverlapped == &pSession->_SendOverlapped)
 				pSession->CompleteSend(cbTransffered);
 		}
-		
+
 		if (InterlockedDecrement64(&pSession->_IOCount) == 0)
+		{
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"_bLogoutFlag On Session Index : %d, Socket : %d, IOCP Returns 0, ErrorCode : %d, Session Mode : %d", pSession->_iArrayIndex, pSession->_ClientInfo.socket, ErrorCode, pSession->_Mode);
+
 			pSession->_bLogoutFlag = true;
+		}
 	}
 
 	return true;

@@ -7,6 +7,8 @@ long CCrashDump::_DumpCount;
 
 int main()
 {
+	_getch();
+
 	SYSLOG_DIRECTROYSET(L"MatchServer_Log");
 
 	if (!Server.Start(L"_MatchServer.cnf", true))

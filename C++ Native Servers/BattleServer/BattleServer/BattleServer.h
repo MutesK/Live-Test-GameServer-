@@ -3,7 +3,7 @@
 #include "CommonProtocol.h"
 #include "Engine/MMOServer.h"
 #include "ContentsData.h"
-
+#include <memory>
 /*
 	1. 채팅서버 관리, 마스터 서버 연결
 		채팅서버 1:1 연결, 마스터 서버는 1:N 구조
@@ -12,6 +12,8 @@
 	각각의 플레이어 패킷 처리는 CGameServer 클래스
 */
 
+class CMornitoringAgent;
+class CMornitoring;
 
 class CBattleServer : public CMMOServer
 {
@@ -24,6 +26,9 @@ public:
 
 	void Monitoring();
 	void RoomStatusMonitoring();
+	void MonitoringSender();
+
+
 	void HTTPURLParse();
 private:
 	CPlayer* Players;
@@ -50,11 +55,18 @@ public:
 
 	void	LoginProcessReq(CPlayer *pPlayer);
 	BYTE	Login_SessionKeyCheck(CPlayer *pPlayer);
+	BYTE	ContentLoad(CPlayer *pPlayer);
 
 	void    ResAuthRemoveUser(CPlayer *pPlayer);
 	/////////////////////////////////////////////////////////////////////////////
 	// GAME 모드 업데이트 이벤트 로직처리부
 	void	OnGame_Update(void);
+
+	void	Game_PlayerCheck();
+	void	Game_RoomCheck();
+	void	Game_RedZoneAlert(CRoom& pRoom);
+	void	Game_RedZone(CRoom& pRoom);
+	void	Game_RedZonePlayerCheck(CRoom& pRoom);
 
 	void	Game_CreateCharacter(CPlayer *pPlayer);
 	void	Game_MoveCharacter(CPlayer *pPlayer);
@@ -62,6 +74,15 @@ public:
 	void	Game_Fire1(CPlayer *pPlayer);
 	void	Game_Reload(CPlayer *pPlayer);
 	void	Game_HitDamage(CPlayer *pPlayer);
+	void	Game_MedkitGet(CPlayer* pPlayer);
+
+
+	void	Game_Result(CRoom& Room);
+	void	Game_PlayerDie(CPlayer *pPlayer);
+	void	Game_PlayerRedZoneDamage(CPlayer *pPlayer);
+	void	Game_DestoryRoom(CRoom &Room);
+
+	void	Game_MakeMedikit(CRoom *pRoom, float Xpos, float Ypos);
 
 	void	ResCreateMyCharacter(CPlayer *pPlayer);
 	void	ResCreateOtherCharacter(CPlayer *pPlayer);
@@ -81,7 +102,7 @@ public:
 
 	CLockFreeQueue <CPlayer *> LoginQueue;
 private:
-	HANDLE hLoginThread[10];
+	HANDLE hLoginThread[5];
 	//////////////////////////////////////////////////////////////////////////////
 public:
 	void ConnectToken_RamdomGenerator();
@@ -163,6 +184,9 @@ private:
 	LONG64 OpenRoom;
 	LONG64 ReadyRoom;
 	LONG64 GameRoom;
+
+	shared_ptr<CMornitoringAgent> MonitorSenderAgent;
+	shared_ptr<CMornitoring> pMonitorAgent;
 	////////////////////////////////////////////////////////////
 
 	int MAX_USER;

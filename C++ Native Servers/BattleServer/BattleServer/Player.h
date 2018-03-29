@@ -23,6 +23,7 @@ public:
 	ULONGLONG LastTick;
 	/////////////////////////////////////////////////////////////
 	// 게임 컨텐츠용 변수
+	bool Die;
 	int RoomNo;
 	INT64 AccountNo;
 
@@ -38,6 +39,19 @@ public:
 	float	HitPointX;
 	float	HitPointY;
 	float	HitPointZ;
+
+	UINT	GetMedKitID;
+	/////////////////////////////////////////////////////////////
+
+	int		Record_PlayCount;
+	int		Record_PlayTime;
+	int		Record_Kill;
+	int		Record_Die;
+	int		Record_Win;
+
+	int		KillCount;
+	ULONGLONG	PlayTime;
+
 
 	// 만약 이 플레이어가 다른 플레이어를 타격했을때 대비 저장
 	INT64 TargetAccountNo;
@@ -73,6 +87,7 @@ private:
 	void ReqFire1(CPacketBuffer *pBuffer);
 	//void ReqReload(CPacketBuffer *pBuffer);
 	void ReqHitDamage(CPacketBuffer *pBuffer);
+	void ReqMedkitGet(CPacketBuffer *pBuffer);
 	void ResetPlayer();
 private:
 	CBattleServer *pBattleServer;

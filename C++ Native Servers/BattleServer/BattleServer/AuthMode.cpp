@@ -31,7 +31,7 @@ void CBattleServer::Auth_MakeRoom()
 
 	static ULONGLONG TickOpen = CUpdateTime::GetTickCount();
 
-	if (CUpdateTime::GetTickCount() - TickOpen < 50)
+	if (CUpdateTime::GetTickCount() - TickOpen < 200)
 		return;
 
 	TickOpen = CUpdateTime::GetTickCount();
@@ -52,6 +52,10 @@ void CBattleServer::Auth_MakeRoom()
 					Rooms[RoomIndex].MaxUser = MAX_USER;
 					Rooms[RoomIndex].RoomNo = RoomIndex;
 					Rooms[RoomIndex].GameIndex = 0;
+					Rooms[RoomIndex].SurvivalUser = 0;
+					Rooms[RoomIndex].RedZoneAlertFlag = false;
+					Rooms[RoomIndex].MedkitID = 0;
+					Rooms[RoomIndex].RedZonePosition = 0;
 
 					ChatServerCreateRoom(&Rooms[RoomIndex]);
 					MasterServerCreateRoom(&Rooms[RoomIndex]);
@@ -85,9 +89,9 @@ void CBattleServer::Auth_CheckLeaveRoom()
 			//GameRoom--;
 			InterlockedAdd64(&GameRoom, -1);
 
-			pRoom->RoomStatus = eNOT_USE;
 			//	배틀 서버의 방 삭제를 채팅서버에게 알림 
 			ChatServerDestoryRoom(pRoom);
+			pRoom->RoomStatus = eNOT_USE;
 		}
 	}
 }
@@ -145,30 +149,11 @@ void	CBattleServer::ReqEnterRoom(CPlayer *pPlayer)
 		Rooms[pPlayer->RoomNo].RoomStatus == eCLOSE_MODE ||
 		Rooms[pPlayer->RoomNo].RoomStatus == eNOT_USE)
 		Result = 3;
-	else if (Rooms[pPlayer->RoomNo].MaxUser == 0)
+	else if (Rooms[pPlayer->RoomNo].PlayerMap.size() >= MAX_USER)
 		Result = 5;
 	else if (memcmp(Rooms[pPlayer->RoomNo].EnterToken, pPlayer->EnterToken, 32) != 0)
 		Result = 2;
 
-	// 이미 접속한사람인가?
-	for (int RoomIndex = 0; RoomIndex < MAX_BATTLEROOM; RoomIndex++)
-	{
-		CRoom &Room = Rooms[RoomIndex];
-
-		Room.ReadLock();
-		auto finditer = Room.PlayerMap.find(pPlayer->AccountNo);
-		if (finditer != Room.PlayerMap.end())
-		{
-			Room.ReadUnLock();
-			Result = 2;
-			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Duplicate Connection: AccountNo : %I64d, RoomNo : %d, Connector IP : %s",
-				pPlayer->AccountNo, pPlayer->RoomNo, pPlayer->_ClientInfo._IP);
-
-			break;
-		}
-		Room.ReadUnLock();
-
-	}
 
 	if (Result == 1)
 	{
@@ -177,15 +162,19 @@ void	CBattleServer::ReqEnterRoom(CPlayer *pPlayer)
 		pair<INT64, CPlayer *> pairs = { pPlayer->AccountNo, pPlayer };
 		auto result = Rooms[pPlayer->RoomNo].PlayerMap.insert(pairs);
 		if (!result.second)
+		{
 			SYSLOG(L"ROOM", LOG_ERROR, L"AccountNo : %d is Already exist in Rooms[%d]", pPlayer->AccountNo, pPlayer->RoomNo);
+			ResEnterRoom(pPlayer, 4);
+			return;
+		}
 		//Rooms[pPlayer->RoomNo].PlayerList.push_back(pPlayer);
 		Rooms[pPlayer->RoomNo].MaxUser--;
 		Rooms[pPlayer->RoomNo].Unlock();
 	}
 	else
 	{
-		SYSLOG(L"ROOM", LOG_ERROR, L"Enter ROOM Error / Result : %d, Rooms Status : %d, Rooms MaxUser : %d, Rooms EnterToken : %s, Player EnterToken : %s",
-			Result, Rooms[pPlayer->RoomNo].RoomStatus, Rooms[pPlayer->RoomNo].MaxUser, Rooms[pPlayer->RoomNo].EnterToken, pPlayer->EnterToken);
+		SYSLOG(L"ROOM", LOG_ERROR, L"Enter ROOM Error / Result : %d, Rooms Status : %d, Rooms MaxUser : %d",
+			Result, Rooms[pPlayer->RoomNo].RoomStatus, Rooms[pPlayer->RoomNo].MaxUser);
 	}
 	// 응답 패킷 전송
 	ResEnterRoom(pPlayer, Result);
@@ -209,6 +198,8 @@ void CBattleServer::ResAddUser(CPlayer *pPlayer)
 
 	*pBuffer << Type << pPlayer->RoomNo << pPlayer->AccountNo;
 	pBuffer->PutData(reinterpret_cast<char *>(pPlayer->NickName), 40);
+	*pBuffer << pPlayer->Record_PlayCount << pPlayer->Record_PlayTime
+		<< pPlayer->Record_Kill << pPlayer->Record_Die << pPlayer->Record_Win;
 
 	SendPacketAllInRoom(pBuffer, pPlayer);
 }
@@ -230,6 +221,8 @@ void	CBattleServer::ResAddOtherUser(CPlayer *pResPlayer)
 		WORD Type = en_PACKET_CS_GAME_RES_ADD_USER;
 		*pBuffer << Type << pPlayer->RoomNo << pPlayer->AccountNo;
 		pBuffer->PutData(reinterpret_cast<char *>(pPlayer->NickName), 40);
+		*pBuffer << pPlayer->Record_PlayCount << pPlayer->Record_PlayTime
+			<< pPlayer->Record_Kill << pPlayer->Record_Die << pPlayer->Record_Win;
 
 		if (!pResPlayer->SendPacket(pBuffer))
 			pBuffer->Free();
@@ -301,6 +294,26 @@ BYTE CBattleServer::Login_SessionKeyCheck(CPlayer *pPlayer)
 		return Result;
 	}
 
+	 //이미 접속한사람인가?
+	for (int RoomIndex = 0; RoomIndex < MAX_BATTLEROOM; RoomIndex++)
+	{
+		CRoom &Room = Rooms[RoomIndex];
+
+		Room.ReadLock();
+		auto finditer = Room.PlayerMap.find(pPlayer->AccountNo);
+		if (finditer != Room.PlayerMap.end())
+		{
+			Room.ReadUnLock();
+			Result = 6;
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"Duplicate Connection: AccountNo : %I64d, RoomNo : %d, Connector IP : %s",
+				pPlayer->AccountNo, pPlayer->RoomNo, pPlayer->_ClientInfo._IP);
+
+			break;
+		}
+		Room.ReadUnLock();
+
+	}
+
 	if (memcmp(pPlayer->SessionKey, document["sessionkey"].GetString(), 64) != 0)
 	{
 		// 세션키 오류
@@ -314,6 +327,79 @@ BYTE CBattleServer::Login_SessionKeyCheck(CPlayer *pPlayer)
 	strcpy_s(nickname, 20, document["nick"].GetString());
 	UTF8toUTF16(nickname, pPlayer->NickName, 20);
 
+	///////////////////////////////////////////////////////////////////////////////
+	return ContentLoad(pPlayer);
+}
+
+BYTE	CBattleServer::ContentLoad(CPlayer *pPlayer)
+{
+	WCHAR PathURL[200];
+	BYTE Result;
+	StringCchPrintf(PathURL, 200, L"%s%s", httpPath, L"select_contents.php");
+
+	// AccountNo를 JSON으로 묶어서 쏴야된다.
+	char PostDATA[100];
+	char RecvDATA[1400] = "";
+
+	sprintf_s(PostDATA, 100, "{\"accountno\":%I64d}", pPlayer->AccountNo);
+
+	int retry = 10000;
+	int ret = -1;
+	int ResultCode = 0;
+	PRO_BEGIN(L"HTTP POST");
+	while (1)
+	{
+		ret = HTTP_POST(httpURL, PathURL, PostDATA, RecvDATA);
+
+		if (ret == 200 || retry == 0)
+			break;
+
+		retry--;
+	}
+	PRO_END(L"HTTP POST");
+
+	if (retry == 0 || ret == -1)
+	{
+		// 에러 로그 & 기타 오류
+		Result = 3;
+
+		SYSLOG(L"LOGIN", LOG_ERROR, L"Request Login, HTTP POST ERROR. Result Code : %d", ret);
+		//ResLogin(OutSessionID, Result);
+		CCrashDump::Crash();
+		return Result;
+	}
+
+	// RecvDATA를 RapidJSON을 이용해서 값을 얻어온다.
+	Document document;
+	document.Parse(RecvDATA);
+
+	ResultCode = document["result"].GetInt();
+
+	if (ResultCode == -10)
+	{
+		// AccountNo 없음
+		Result = 3;
+		//ResLogin(OutSessionID, Result);
+		return Result;
+	}
+
+	if (ResultCode != 1)
+	{
+		// 기타 오류
+		Result = 4;
+		//ResLogin(OutSessionID, Result);
+		SYSLOG(L"LOGIN", LOG_ERROR, L"SHDB LogDB ETC Error");
+		SYSLOG(L"LOGIN", LOG_ERROR, L"%s", RecvDATA);
+
+		return Result;
+	}
+
+	pPlayer->Record_PlayCount = document["playcount"].GetInt();
+	pPlayer->Record_PlayTime = document["playtime"].GetInt();
+	pPlayer->Record_Kill = document["kill"].GetInt();
+	pPlayer->Record_Die = document["die"].GetInt();
+	pPlayer->Record_Win = document["win"].GetInt();
+
 	return true;
 }
 
@@ -324,7 +410,7 @@ void	CBattleServer::Auth_ReadyToPlayRoom()
 		CRoom *pRoom = &Rooms[i];
 
 		// 해당 방의 인원이 꽉차고, Open_Mode라면 Close Mode로 전환한다.
-		if (pRoom->RoomStatus == eOPEN_MODE && pRoom->MaxUser == 0)
+		if (pRoom->RoomStatus == eOPEN_MODE && pRoom->PlayerMap.size() >= MAX_USER)
 		{
 			InterlockedAdd64(&OpenRoom, -1);
 			InterlockedAdd64(&ReadyRoom, 1);
@@ -333,6 +419,7 @@ void	CBattleServer::Auth_ReadyToPlayRoom()
 			//ReadyRoom++;
 
 			pRoom->RoomStatus = eCLOSE_MODE;
+			pRoom->SurvivalUser = MAX_USER;
 			// 해당 방의 인원에게 전부 패킷 전송
 			ResReadyToPlayRoom(i);
 
@@ -371,11 +458,14 @@ void	CBattleServer::ResLogin(CPlayer *pPlayer, BYTE Result)
 	WORD Type = en_PACKET_CS_GAME_RES_LOGIN;
 	*pBuffer << Type << pPlayer->AccountNo << Result;
 
-	if (!pPlayer->SendPacket(pBuffer))
+	if (!pPlayer->SendPacket(pBuffer) && Result == 1)
 	{
 		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"ResLogin Packet Send Failed");
 		pBuffer->Free();
+		pPlayer->SendCompleteDisconnect();
 	}
+
+	pPlayer->_LastRecvPacketTime = CUpdateTime::GetTickCount();
 }
 
 void	CBattleServer::ResEnterRoom(CPlayer *pPlayer, BYTE Result)
@@ -383,14 +473,18 @@ void	CBattleServer::ResEnterRoom(CPlayer *pPlayer, BYTE Result)
 	CPacketBuffer *pBuffer = CPacketBuffer::Alloc();
 
 	WORD Type = en_PACKET_CS_GAME_RES_ENTER_ROOM;
+	CRoom *pRoom = &Rooms[pPlayer->RoomNo];
+	BYTE MaxUser = pRoom->PlayerMap.size();
 
-	*pBuffer << Type << pPlayer->AccountNo << pPlayer->RoomNo << Result;
+	*pBuffer << Type << pPlayer->AccountNo << pPlayer->RoomNo << MaxUser << Result;
 
 	if (!pPlayer->SendPacket(pBuffer))
 	{
 		SYSLOG(L"SYSTEM", LOG_SYSTEM, L"ResLoginEnter Packet Send Failed");
 		pBuffer->Free();
 	}
+
+	pPlayer->_LastRecvPacketTime = CUpdateTime::GetTickCount();
 }
 
 void	CBattleServer::ResReadyToPlayRoom(int RoomIndex)
@@ -400,7 +494,7 @@ void	CBattleServer::ResReadyToPlayRoom(int RoomIndex)
 	CPacketBuffer *pBuffer = CPacketBuffer::Alloc();
 
 	WORD Type = en_PACKET_CS_GAME_RES_PLAY_READY;
-	BYTE ReadySec = READY_SEC;
+	BYTE ReadySec = READY_SEC / 1000;
 
 	*pBuffer << Type << RoomIndex << ReadySec;
 
@@ -422,20 +516,19 @@ void CBattleServer::Auth_ChangeUserGameMode(int RoomIndex)
 	{
 		CPlayer *pPlayer = iter->second;
 
-		if (pPlayer->AccountNo != iter->first)
-			continue;
-
 		pBuffer->AddRefCount();
 		if (!pPlayer->SendPacket(pBuffer))
 			pBuffer->Free();
 
 		pPlayer->SetMode_GAME();
-		pPlayer->LastTick = CUpdateTime::GetTickCount();
-
+		pPlayer->_LastRecvPacketTime = CUpdateTime::GetTickCount();
+		pPlayer->PlayTime = CUpdateTime::GetTickCount();
+		
 		pPlayer->ProcessType = en_PACKET_CS_GAME_RES_CREATE_MY_CHARACTER;
 	}
 	pRoom->ReadUnLock();
 
+	pRoom->RedZoneTick = 0;
 	pBuffer->Free();
 }
 

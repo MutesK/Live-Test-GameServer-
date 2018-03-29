@@ -282,9 +282,10 @@ UINT CLanClient::WorkerWork()
 	DWORD cbTransffered;
 	LPOVERLAPPED pOverlapped;
 	CSession *pSession;
-
+	int ErrorCode = 0;
 	while (1)
 	{
+		ErrorCode = 0;
 		cbTransffered = 0;
 		pOverlapped = nullptr;
 		pSession = nullptr;
@@ -305,6 +306,16 @@ UINT CLanClient::WorkerWork()
 
 		if (pSession == nullptr)
 			continue;
+
+		if (retval == false)
+		{
+			ErrorCode = GetLastError();
+
+			SYSLOG(L"SYSTEM", LOG_SYSTEM, L"SessionID: %I64d, Socket : %d, IOCP Returns 0, ErrorCode : %d",
+				pSession->SessionID, pSession->socket, ErrorCode);
+
+			continue;
+		}
 
 		// 소켓 종료
 		if (cbTransffered == 0)

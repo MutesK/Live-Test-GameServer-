@@ -195,21 +195,36 @@ public:
 	/* ============================================================================= */
 	CPacketBuffer	&operator = (CPacketBuffer &clSrCPacketBuffer);
 
+
 	template<typename T>
-	CPacketBuffer& operator<<(T& Value)
+	CPacketBuffer& operator<<(const T& Value)
 	{
-		PutData(reinterpret_cast<char *>(&Value), sizeof(T));
+		PutData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
+		return *this;
+	}
+
+	template<typename T>
+	CPacketBuffer& operator<<(const T& Value) const
+	{
+		PutData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
 		return *this;
 	}
 
 
 	template<typename T>
-	CPacketBuffer& operator >> (T& Value)
+	CPacketBuffer& operator >> (const T& Value)
 	{
-		GetData(reinterpret_cast<char *>(&Value), sizeof(T));
+		GetData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
 		return *this;
 	}
 
+
+	template<typename T>
+	CPacketBuffer& operator >> (const T& Value) const
+	{
+		GetData(reinterpret_cast<char *>(const_cast<T *>(&Value)), sizeof(T));
+		return *this;
+	}
 	//////////////////////////////////////////////////////////////////////////
 	// 현재 사용중인 사이즈 얻기.
 	//
@@ -276,6 +291,11 @@ public:
 	static void Free(CPacketBuffer *pBuffer)
 	{
 		pBuffer->Free();
+	}
+
+	static LONG64 GetAllocCount()
+	{
+		return AllocCount;
 	}
 };
 

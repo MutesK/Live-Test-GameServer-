@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CpuUsage.cpp" />
     <ClCompile Include="Engine\APIHook.cpp" />
     <ClCompile Include="Engine\CProfiler.cpp" />
     <ClCompile Include="Engine\CSystemLog.cpp" />
@@ -33,10 +34,13 @@
     <ClCompile Include="LanBattle.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="ChatServer.cpp" />
+    <ClCompile Include="MornitoringAgent.cpp" />
+    <ClCompile Include="Morntoring.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CommonProtocol.h" />
     <ClInclude Include="ChatServer.h" />
+    <ClInclude Include="CpuUsage.h" />
     <ClInclude Include="Engine\APIHook.h" />
     <ClInclude Include="Engine\CCrashDump.h" />
     <ClInclude Include="Engine\CLockFreeQueue.h" />
@@ -57,6 +61,8 @@
     <ClInclude Include="Engine\StreamBuffer.h" />
     <ClInclude Include="Engine\UpdateTime.h" />
     <ClInclude Include="LanBattle.h" />
+    <ClInclude Include="MornitoringAgent.h" />
+    <ClInclude Include="Morntoring.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="_ChatServer.cnf" />

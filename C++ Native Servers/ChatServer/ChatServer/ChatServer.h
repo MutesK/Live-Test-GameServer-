@@ -4,11 +4,14 @@
 #include "CommonProtocol.h"
 #include <map>
 #include <list>
+#include <memory>
 using namespace std;
 
 #define MAX_BATTLEROOM 300
 
 class CLanBattle;
+class CMornitoringAgent;
+class CMornitoring;
 
 class CChatServer : public CNetServer
 {
@@ -80,6 +83,8 @@ public:
 	virtual bool Start(WCHAR *szServerConfig, bool nagleOption);
 
 	virtual void Stop();
+
+	void MornitorSender();
 	void Mornitoring();
 	//================================================================================================
 private:
@@ -116,7 +121,17 @@ private:
 	void ResEnterRoom(CPlayer *pPlayer, BYTE bResult);
 	void ResChatMessage(CPlayer *pPlayer, WORD &MessgeLen, WCHAR* pMessageStr);
 
+	bool UTF16toUTF8(char *szText, const WCHAR *szBuff, int iBuffLen)
+	{
+		int iRe = WideCharToMultiByte(CP_UTF8, 0, szBuff, lstrlenW(szBuff), static_cast<LPSTR>(szText), iBuffLen, NULL, NULL);
+		if (iRe < iBuffLen)
+			szText[iRe] = '\0';
+		return true;
+	}
 private:
+	shared_ptr<CMornitoringAgent> MonitorAgent;
+	shared_ptr<CMornitoring> Monitor;
+
 	map <ULONG64, CPlayer *> PlayerMap;
 
 	CMemoryPool<Queue_DATA> UpdatePool;

@@ -277,6 +277,11 @@ public:
 	{
 		pBuffer->Free();
 	}
+
+	static LONG64 GetAllocCount()
+	{
+		return AllocCount;
+	}
 };
 
 

@@ -19,6 +19,9 @@
     <Filter Include="Engine">
       <UniqueIdentifier>{ea488a1d-6957-4981-9f58-646c6d74b7de}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Monitoring">
+      <UniqueIdentifier>{63f292e9-9ed1-4bd0-80d8-1cbb3ca2cfa2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -60,8 +63,17 @@
     <ClCompile Include="Engine\StreamBuffer.cpp">
       <Filter>리소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="ChatLanClient.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="CpuUsage.cpp">
+      <Filter>Monitoring</Filter>
+    </ClCompile>
+    <ClCompile Include="MornitoringAgent.cpp">
+      <Filter>Monitoring</Filter>
+    </ClCompile>
+    <ClCompile Include="Morntoring.cpp">
+      <Filter>Monitoring</Filter>
+    </ClCompile>
+    <ClCompile Include="LanBattle.cpp">
+      <Filter>ChatServer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -69,9 +81,6 @@
       <Filter>ChatServer</Filter>
     </ClInclude>
     <ClInclude Include="ChatServer.h">
-      <Filter>ChatServer</Filter>
-    </ClInclude>
-    <ClInclude Include="Common.h">
       <Filter>ChatServer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\APIHook.h">
@@ -131,8 +140,17 @@
     <ClInclude Include="Engine\UpdateTime.h">
       <Filter>리소스 파일</Filter>
     </ClInclude>
-    <ClInclude Include="ChatLanClient.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="CpuUsage.h">
+      <Filter>Monitoring</Filter>
+    </ClInclude>
+    <ClInclude Include="MornitoringAgent.h">
+      <Filter>Monitoring</Filter>
+    </ClInclude>
+    <ClInclude Include="Morntoring.h">
+      <Filter>Monitoring</Filter>
+    </ClInclude>
+    <ClInclude Include="LanBattle.h">
+      <Filter>ChatServer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

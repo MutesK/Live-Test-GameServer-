@@ -3,13 +3,19 @@
 #include "CommonProtocol.h"
 #include "Engine/NetServer.h"
 #include <map>
+#include <memory>
+#include <array>
 using namespace std;
 
 class CLanMatchServer;
 class CDBConnectorTLS;
+class CMornitoringAgent;
+class CMornitoring;
 
 struct Player
 {
+	bool isLogined;
+	bool reqRoom;
 	UINT64 ClientUniqueKey; // 중복 불가능
 
 	__int64 AccountNo;  // 중복 가능
@@ -47,6 +53,8 @@ public:
 	virtual void Stop();
 
 	void Monitoring();
+	void MonitoringSend();
+
 	void MasterServerConnect();
 	void MasterServerDisconnect();
 private:
@@ -91,8 +99,12 @@ private:
 	////////////////////////////////////////////////////////////
 	// 서버 켜짐 인식과 하트비트를 위한 DB 연결
 	////////////////////////////////////////////////////////////
-	CDBConnectorTLS *pConnect;
-	CLanMatchServer *pClient;
+	//CDBConnectorTLS *pConnect;
+	//CLanMatchServer *pClient;
+	shared_ptr<CDBConnectorTLS> pConnect;
+	shared_ptr<CLanMatchServer> pClient;
+	shared_ptr<CMornitoringAgent> pMornitorSender;
+	shared_ptr<CMornitoring> pMonitorAgent;
 
 	WORD ServerNo;
 	char MasterToken[32];
@@ -123,7 +135,6 @@ private:
 	map<ULONG64, Player *> PlayerMap;
 	map<ULONG64, Player *> PlayerUniqueMap;
 
-
 	SRWLOCK PlayerLock;
 	SRWLOCK PlayerUniqueLock;
 
@@ -131,7 +142,7 @@ private:
 	static UINT WINAPI hTimedOutThread(LPVOID arg);
 	UINT TimeOutCheck();
 ////////////////////////////////////////////////////////////
-
+////////////////////////////////////////////////////////////
 	LONG64 LoginRequest;
 	LONG64 RoomRequest;
 	UINT   Ver_Code;

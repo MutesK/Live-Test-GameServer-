@@ -149,7 +149,10 @@
     <ClCompile Include="AuthMode.cpp" />
     <ClCompile Include="BattleServer.cpp" />
     <ClCompile Include="ContentsData.cpp" />
+    <ClCompile Include="CpuUsage.cpp" />
     <ClCompile Include="GameMode.cpp" />
+    <ClCompile Include="MornitoringAgent.cpp" />
+    <ClCompile Include="Morntoring.cpp" />
     <ClCompile Include="ServerProtocol.cpp" />
     <ClCompile Include="ChatLanServer.cpp" />
     <ClCompile Include="Engine\APIHook.cpp" />
@@ -174,6 +177,7 @@
     <ClInclude Include="ChatLanServer.h" />
     <ClInclude Include="CommonProtocol.h" />
     <ClInclude Include="ContentsData.h" />
+    <ClInclude Include="CpuUsage.h" />
     <ClInclude Include="Engine\APIHook.h" />
     <ClInclude Include="Engine\CCrashDump.h" />
     <ClInclude Include="Engine\CLockFreeQueue.h" />
@@ -195,6 +199,8 @@
     <ClInclude Include="Engine\Queue.h" />
     <ClInclude Include="Engine\StreamBuffer.h" />
     <ClInclude Include="Engine\UpdateTime.h" />
+    <ClInclude Include="MornitoringAgent.h" />
+    <ClInclude Include="Morntoring.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="MasterLanClient.h" />
   </ItemGroup>
